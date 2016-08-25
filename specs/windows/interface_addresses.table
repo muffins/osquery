@@ -1,0 +1,11 @@
+table_name("interface_addresses")
+description("All of the Windows registry hives.")
+schema([
+    Column("address", TEXT, "The parent registry hive where the key and value exist"),
+    Column("ip_subnet", TEXT, "The parent registry hive where the key and value exist"),
+    Column("serivce_name", TEXT, "The parent registry hive where the key and value exist"),
+])
+implementation("interface_addresses@genWinInterfacesAddresses")
+examples([
+  "select * from interfaces",
+])
