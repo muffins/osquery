@@ -276,7 +276,20 @@ void WINAPI ServiceMain(DWORD argc, LPSTR* argv) {
       UpdateServiceStatus(
           SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SHUTDOWN, SERVICE_RUNNING, 0, 0);
 
-      daemonEntry(argc, argv);
+	  /*
+	  std::string argString(GetCommandLine());
+	  if (__argc > 1 && !argString.empty()) {
+		  std::vector<std::string> svcArgs = osquery::split(argString);
+		  // The flagfile param was '=' assigned
+		  if (svcArgs.size() == 1) {
+			  svcArgs = osquery::split(argString, "=");
+		  }
+		  FLAGS_flagfile = svcArgs.back();
+	  }
+	  daemonEntry(argc, argv);
+	  */
+
+	  daemonEntry(__argc, __argv);
 
       ::CloseHandle(kStopEvent);
       kStopEvent = nullptr;
