@@ -1211,4 +1211,10 @@ LONGLONG filetimeToUnixtime(const FILETIME& ft) {
   date.QuadPart -= adjust.QuadPart;
   return date.QuadPart / 10000000;
 }
+
+fs::path getSystemRoot() {
+  std::vector<char> winDirectory(MAX_PATH);
+  GetWindowsDirectory(winDirectory.data(), MAX_PATH);
+  return fs::path(winDirectory);
+}
 }

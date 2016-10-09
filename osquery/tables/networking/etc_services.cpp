@@ -17,6 +17,7 @@
 
 #include <osquery/core.h>
 #include <osquery/filesystem.h>
+#include <osquery/filesystem/fileops.h>
 #include <osquery/logger.h>
 #include <osquery/tables.h>
 

@@ -336,4 +336,8 @@ boost::optional<FILE*> platformFopen(const std::string& filename,
 
   return fp;
 }
+
+fs::path getSystemRoot() {
+  return fs::path("/");
+}
 }
