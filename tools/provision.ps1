@@ -168,6 +168,8 @@ function Install-PipPackage {
     Write-Host "[-] ERROR: Install packages from requirements failed." -foregroundcolor Red
     Exit -1
   }
+  Write-host " => Installing Windows specific packages." -foregroundcolor DarkYellow
+  pip install -q pypiwin32
 }
 
 function Install-ThirdParty {
