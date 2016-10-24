@@ -1,6 +1,6 @@
 `osqueryd` is the host monitoring daemon that allows you to **schedule** queries and record OS state changes. The daemon aggregates query results over time and generates logs, which indicate state change according to each query. The daemon also uses OS eventing APIs to record monitored file and directory changes, hardware events, network events, and more.
 
-The installation and deployment guides are mostly focused on the osquery daemon life cycle. On Linux the daemon starts as an SystemV initscript; on OS X as a launch daemon. The service is highly configurable and extendable.
+The installation and deployment guides are mostly focused on the osquery daemon life cycle. On Linux the daemon starts as an SystemV initscript, as a launch daemon on OS X, and as a service registered with the Service Control Manager on Windows. The service is highly configurable and extendable.
 
 ## Configuration and query schedule
 
