@@ -58,7 +58,8 @@ Status Acquisition::getPendingFileCarves() {
       std::stringstream ss(json);
       pt::read_json(ss, tree);
     } catch (const pt::ptree_error& e) {
-      return;
+      // TODO: This will stop us dead in tracks if we fail to parse a job.
+      return Status(1, "Error writing JSON: " + std::string(e.what()));
     }
     if (tree.get<std::string>("status") != "PENDING") {
       continue;
@@ -74,19 +75,20 @@ Status Acquisition::getPendingFileCarves() {
 
   pendingCarves_ =
       SQL::selectAllFrom("acquisitions", "status", EQUALS, "PENDING");
+  return Status(0, "OK");
 }
 
 Status Acquisition::updateCarveStatus(std::string status, std::string guid) {
   // There should only be one, as this function only updates the status of
   // a single carve.
-  std::vector<std::string> carveTasks;
-  scanDatabaseKeys(kQueries, fileAcquisitions, acquisitionPrefix_);
+  // std::vector<std::string> carveTasks;
+  // scanDatabaseKeys(kQueries, fileAcquisitions, acquisitionPrefix_);
   return Status(0, "OK");
 }
 
 Status Acquisition::executePendingFileCarves() {
   if (pendingCarves_.size() == 0) {
-    return;
+    return Status(0, "OK");
   }
 
   for (auto& r : pendingCarves_) {

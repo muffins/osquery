@@ -41,10 +41,13 @@ class Acquisition {
   ~Acquisition(){};
 
   /// Retrieve all pending file carve operations from the acquire_file table
-  void getPendingFileCarves();
+  Status getPendingFileCarves();
+
+  /// Updates the status of a specific carving task
+  Status updateCarveStatus(std::string status, std::string guid);
 
   /// Executes all pending file carves
-  void executePendingFileCarves();
+  Status executePendingFileCarves();
 
  private:
   const std::string acquisitionPrefix_ = "acquisition.";
