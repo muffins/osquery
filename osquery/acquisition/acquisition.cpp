@@ -10,8 +10,8 @@
 
 #include <osquery/logger.h>
 #include <osquery/sql.h>
+#include <osquery/acquisition.h>
 
-#include "osquery/acquisition/acquisition.h"
 #include "osquery/core/json.h"
 
 namespace fs = boost::filesystem;
@@ -22,7 +22,11 @@ namespace osquery {
 FLAG(bool,
      disable_acquisition,
      true,
-     "Disable acuisition engine (default true)");
+     "Disable acquisition engine (default true)");
+
+CREATE_REGISTRY(AcquisitionPlugin, "acquisition");
+
+FLAG(string, acquisition_plugin, "tls", "Acquisition plugin name");
 
 Acquisition::Acquisition() {
   Status s = makeAcquisitionFS();

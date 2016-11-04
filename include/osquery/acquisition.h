@@ -10,6 +10,12 @@
 
 #pragma once
 
+#include <string>
+#include <vector>
+
+#include <osquery/database.h>
+#include <osquery/registry.h>
+#include <osquery/status.h>
 #include <boost/filesystem.hpp>
 #include <boost/filesystem/path.hpp>
 #include <osquery/logger.h>
@@ -17,6 +23,16 @@
 namespace fs = boost::filesystem;
 
 namespace osquery {
+
+class AcquisitionPlugin : public Plugin {
+ public:
+
+  virtual Status sendCarves() = 0;
+
+  /// Main entrypoint for distirbuted plugin requests
+  Status call(const PluginRequest& request, PluginResponse& response) override;
+};
+
 
 class Acquisition {
  public:

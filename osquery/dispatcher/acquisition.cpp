@@ -11,8 +11,8 @@
 #include <osquery/database.h>
 #include <osquery/flags.h>
 #include <osquery/system.h>
+#include <osquery/acquisition.h>
 
-#include "osquery/acquisition/acquisition.h"
 #include "osquery/core/conversions.h"
 #include "osquery/dispatcher/acquisition.h"
 
