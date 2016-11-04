@@ -21,7 +21,7 @@ namespace osquery {
 
 FLAG(bool,
      disable_acquisition,
-     false, // TODO: Changeme when done.
+     true,
      "Disable acuisition engine (default true)");
 
 Acquisition::Acquisition() {
@@ -60,14 +60,11 @@ void Acquisition::getPendingFileCarves() {
 }
 
 void Acquisition::executePendingFileCarves() {
-  LOG(INFO) << "[+] Carving " << pendingCarves_.size() << " files.";
-
   if (pendingCarves_.size() == 0) {
     return;
   }
 
   for (auto& r : pendingCarves_) {
-    LOG(INFO) << "[+] File: " << r["location"];
     // TODO: Consider creating the GUID of each Carve task here.
     Status s = carveFile(r["location"]);
     if (!s.ok()) {

@@ -26,12 +26,12 @@ FLAG(uint64,
 
 FLAG(uint64,
      acquisition_interval,
-     3,
+     10,
      "Seconds between polling for new queries (default 10)")
 
 DECLARE_bool(disable_acquisition);
 
-// const size_t kDistributedAccelerationInterval = 5;
+const size_t kAcquisitionAccelerationInterval = 5;
 
 void AcquisitionRunner::start() {
   auto acq = Acquisition();
@@ -40,8 +40,6 @@ void AcquisitionRunner::start() {
     acq.getPendingFileCarves();
     acq.executePendingFileCarves();
 
-    pauseMilli(FLAGS_acquisition_interval * 1000);
-    /*
     std::string str_acu = "0";
     Status database = getDatabaseValue(
         kPersistentSettings, "acquisition_accelerate_checkins_expire", str_acu);
@@ -52,22 +50,17 @@ void AcquisitionRunner::start() {
         getUnixTime() > accelerate_checkins_expire) {
       pauseMilli(FLAGS_acquisition_interval * 1000);
     } else {
-      pauseMilli(kDistributedAccelerationInterval * 1000);
+      pauseMilli(kAcquisitionAccelerationInterval * 1000);
     }
-    */
   }
 }
 
 Status startAcquisition() {
-  Dispatcher::addService(std::make_shared<AcquisitionRunner>());
-  return Status(0, "OK");
-  /*
   if (!FLAGS_disable_acquisition) {
     Dispatcher::addService(std::make_shared<AcquisitionRunner>());
     return Status(0, "OK");
   } else {
     return Status(1, "Acquisition service not enabled.");
   }
-  */
 }
 }
