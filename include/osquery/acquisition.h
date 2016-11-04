@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include <queue>
 #include <string>
 #include <vector>
 
@@ -43,25 +44,31 @@ class Acquisition {
   /// Retrieve all pending file carve operations from the acquire_file table
   Status getPendingFileCarves();
 
-  /// Updates the status of a specific carving task
-  Status updateCarveStatus(std::string status, std::string guid);
-
   /// Executes all pending file carves
   Status executePendingFileCarves();
 
   /// Get a chunk of a carve
-  Status getGuidChunk(const std::string& guid, unsigned int chunk_number, std::string& chunk);
+  Status getGuidChunk(const std::string& guid,
+                      unsigned int chunk_number,
+                      std::string& chunk);
+
+  /// Helper function to return a row, given a GUID
+  Row getRowByGuid(const std::string& guid);
+
+  /// Helper function to update a row, given a GUID and the new row
+  Status updateRowByGuid(const Row& r, const std::string& guid);
 
  private:
   const std::string acquisitionPrefix_ = "acquisition.";
   const fs::path acquisitionStore_ =
       fs::temp_directory_path() / std::string{"osquery-acquisitions"};
   QueryData pendingCarves_;
+  std::queue<std::string> completedCarves_;
+
   /// Helper function to create the Acquisition FS
   Status makeAcquisitionFS();
 
-  std::map<std::string, std::string> guidToMap(
-                                      const std::string& guid);
+  std::map<std::string, std::string> guidToMap(const std::string& guid);
 
   /**
    * @brief carves a specified file from the disk and stores it in the store

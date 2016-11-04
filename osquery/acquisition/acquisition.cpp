@@ -8,6 +8,11 @@
  *
  */
 
+#include <queue>
+
+#include <tar.h>
+#include <zlib.h>
+
 #include <osquery/acquisition.h>
 #include <osquery/logger.h>
 #include <osquery/sql.h>
@@ -127,12 +132,46 @@ Status Acquisition::getPendingFileCarves() {
   return Status(0, "OK");
 }
 
-Status Acquisition::updateCarveStatus(std::string status, std::string guid) {
+Status Acquisition::updateRowByGuid(const Row& r, const std::string& guid) {
   // There should only be one, as this function only updates the status of
   // a single carve.
-  // std::vector<std::string> carveTasks;
-  // scanDatabaseKeys(kQueries, fileAcquisitions, acquisitionPrefix_);
+  std::vector<std::string> carveTasks;
+  scanDatabaseKeys(kQueries, carveTasks, acquisitionPrefix_ + guid);
+  if (carveTasks.size() != 1) {
+    return Status(1,
+                  "Invalid number of carve tasks found. Expecting 1, found " +
+                      std::to_string(carveTasks.size()));
+  }
+
+  LOG(INFO) << "Updating status of task " << acquisitionPrefix_ + guid
+            << " to COMPLETE";
+
+  std::string json;
+  getDatabaseValue(kQueries, carveTasks[0], json);
+
+  // Update the value in the database
+  pt::ptree tree;
+
+  try {
+    std::stringstream ss(json);
+    pt::read_json(ss, tree);
+  } catch (const pt::ptree_error& e) {
+    // TODO: This will stop us dead in tracks if we fail to parse a job.
+    return Status(1, "Error writing JSON: " + std::string(e.what()));
+  }
+  tree.put("status", "COMPLETE");
+
+  std::ostringstream os;
+  pt::write_json(os, tree, false);
+  setDatabaseValue(kQueries, acquisitionPrefix_ + guid, os.str());
   return Status(0, "OK");
+}
+
+/// Helper function to return a row, given a GUID
+Row Acquisition::getRowByGuid(const std::string& guid) {
+  Row r;
+
+  return r;
 }
 
 Status Acquisition::executePendingFileCarves() {
@@ -146,19 +185,9 @@ Status Acquisition::executePendingFileCarves() {
     if (!s.ok()) {
       continue;
     }
-    updateCarveStatus("COMPLETE", r["guid"]);
-    // Update the value in the database
-    pt::ptree tree;
-    tree.put("location", r["location"]);
-    // TODO: Consider adding a 'FAILED' status?
-    tree.put("status", "COMPLETE");
-    tree.put("size", r["size"]);
-    tree.put("start_time", r["start_time"]);
-    tree.put("type", r["type"]);
-
-    std::ostringstream os;
-    pt::write_json(os, tree, false);
-    setDatabaseValue(kQueries, acquisitionPrefix_ + r["guid"], os.str());
+    r["status"] = "COMPLETE";
+    updateRowByGuid(r, r["guid"]);
+    completedCarves_.push(r["guid"]);
   }
   return Status(0, "OK");
 }
@@ -189,6 +218,7 @@ Status Acquisition::makeAcquisitionFS() {
 // TODO: This needs actual carving.
 Status Acquisition::carveFile(fs::path p) {
   std::ifstream source(p.string(), std::ios::binary);
+
   std::ofstream dest((acquisitionStore_ / p.filename()).string(),
                      std::ios::binary);
 
@@ -197,6 +227,8 @@ Status Acquisition::carveFile(fs::path p) {
 
   source.close();
   dest.close();
+
+  // Tar the file
 
   return Status(0, "OK");
 }
