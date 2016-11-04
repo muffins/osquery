@@ -1,0 +1,5 @@
+
+file(GLOB OSQUERY_ACQUISITION_HELPERS "acquisition/*.cpp")
+ADD_OSQUERY_LIBRARY(FALSE osquery_acquisition
+  ${OSQUERY_ACQUISITION_HELPERS}
+)
