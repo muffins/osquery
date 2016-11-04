@@ -19,9 +19,7 @@ namespace osquery {
 class AcquisitionRunner : public InternalRunnable {
  public:
   virtual ~AcquisitionRunner() {}
-  AcquisitionRunner() {
-    LOG(INFO) << "Constructing new Acquisition Engine";
-  }
+  AcquisitionRunner() {}
 
  public:
   /// The Acquisition thread entry point.

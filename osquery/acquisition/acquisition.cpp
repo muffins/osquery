@@ -8,9 +8,9 @@
  *
  */
 
+#include <osquery/acquisition.h>
 #include <osquery/logger.h>
 #include <osquery/sql.h>
-#include <osquery/acquisition.h>
 
 #include "osquery/core/json.h"
 
@@ -30,23 +30,22 @@ FLAG(string, acquisition_plugin, "tls", "Acquisition plugin name");
 
 Status AcquisitionPlugin::call(const PluginRequest& request,
                                PluginResponse& response) {
+  if (request.count("action") == 0) {
+    return Status(1, "Acquisition plugins require an action in PluginRequest");
+  }
 
-   if (request.count("action") == 0) {
-     return Status(1, "Acquisition plugins require an action in PluginRequest");
-   }
-
-   if (request.at("action") == "sendCarves") {
-     return Status(0, "OK");
-   }
-   return Status(1,
-                 "Acquisition plugin action unknown: " + request.at("action"));
+  if (request.at("action") == "sendCarves") {
+    return Status(0, "OK");
+  }
+  return Status(1,
+                "Acquisition plugin action unknown: " + request.at("action"));
 }
 
 Acquisition::Acquisition() {
   Status s = makeAcquisitionFS();
 }
 
-void Acquisition::getPendingFileCarves() {
+Status Acquisition::getPendingFileCarves() {
   pendingCarves_.clear();
   std::vector<std::string> fileAcquisitions;
   scanDatabaseKeys(kQueries, fileAcquisitions, acquisitionPrefix_);
@@ -77,7 +76,15 @@ void Acquisition::getPendingFileCarves() {
       SQL::selectAllFrom("acquisitions", "status", EQUALS, "PENDING");
 }
 
-void Acquisition::executePendingFileCarves() {
+Status Acquisition::updateCarveStatus(std::string status, std::string guid) {
+  // There should only be one, as this function only updates the status of
+  // a single carve.
+  std::vector<std::string> carveTasks;
+  scanDatabaseKeys(kQueries, fileAcquisitions, acquisitionPrefix_);
+  return Status(0, "OK");
+}
+
+Status Acquisition::executePendingFileCarves() {
   if (pendingCarves_.size() == 0) {
     return;
   }
@@ -88,6 +95,7 @@ void Acquisition::executePendingFileCarves() {
     if (!s.ok()) {
       continue;
     }
+    updateCarveStatus("COMPLETE", r["guid"]);
     // Update the value in the database
     pt::ptree tree;
     tree.put("location", r["location"]);
@@ -101,9 +109,11 @@ void Acquisition::executePendingFileCarves() {
     pt::write_json(os, tree, false);
     setDatabaseValue(kQueries, acquisitionPrefix_ + r["guid"], os.str());
   }
+  return Status(0, "OK");
 }
 
-// TODO: Error handling around creation of FS
+// TODO: Error handling around creation of FS, if it can't create,
+// shutdown.
 // TODO: Make FS not be a temp file.
 Status Acquisition::makeAcquisitionFS() {
   if (!fs::exists(acquisitionStore_)) {
@@ -112,14 +122,13 @@ Status Acquisition::makeAcquisitionFS() {
       return Status(1, "Failed to create Acquisition Store");
     }
   }
-  return fs::exists(acquisitionStore_)
-             ? Status(0, "OK")
-             : Status(1, "Failed to create Acquisition Store");
+  return Status(0, "OK");
 }
 
 /**
  * Note:
- * When we get to the point of carving memory or carving directory structures
+ * When we get to the point of carving memory or carving directory
+ * structures
  * we could think about creating a folder 'GUID' underneath the osquery FS,
  * and then write out everything by it's root name there.  For directories
  * this might just mean recreating the dir structure underneath the guid

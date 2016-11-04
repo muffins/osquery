@@ -13,12 +13,12 @@
 #include <string>
 #include <vector>
 
-#include <osquery/database.h>
-#include <osquery/registry.h>
-#include <osquery/status.h>
 #include <boost/filesystem.hpp>
 #include <boost/filesystem/path.hpp>
+#include <osquery/database.h>
 #include <osquery/logger.h>
+#include <osquery/registry.h>
+#include <osquery/status.h>
 
 namespace fs = boost::filesystem;
 
@@ -26,13 +26,11 @@ namespace osquery {
 
 class AcquisitionPlugin : public Plugin {
  public:
-
   virtual Status sendAcquisitions() = 0;
 
   /// Main entrypoint for distirbuted plugin requests
   Status call(const PluginRequest& request, PluginResponse& response) override;
 };
-
 
 class Acquisition {
  public:
@@ -50,7 +48,8 @@ class Acquisition {
 
  private:
   const std::string acquisitionPrefix_ = "acquisition.";
-  const fs::path acquisitionStore_ = "/tmp/osquery-acq/";
+  const fs::path acquisitionStore_ =
+      fs::temp_directory_path() / std::string{"osquery-acquisitions"};
   QueryData pendingCarves_;
   /// Helper function to create the Acquisition FS
   Status makeAcquisitionFS();
