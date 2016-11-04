@@ -1,0 +1,10 @@
+table_name("acquire_file")
+description("Schedule the acquisition of a file or directory")
+schema([
+    Column("guid", TEXT, "Random ID for the acquisition"),
+    Column("path", TEXT, "Where the acquisition is happening from"),
+    Column("size", BIGINT, "The expected size of the acquisition"),
+    Column("status", TEXT, "The ongoing status of the acquisition"),
+    Column("time", BIGINT, "How long the acquisition has been running for"),
+])
+implementation("forensic/acquire_file@genAcquireFile")

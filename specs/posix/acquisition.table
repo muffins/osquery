@@ -1,0 +1,11 @@
+table_name("acquisition")
+description("Information on ongoing and completed acquisition requests")
+schema([
+    Column("guid", TEXT, "Random ID for the acquisition"),
+    Column("location", TEXT, "Where the acquisition is happening from"),
+    Column("type", TEXT, "The kind of acquisition: (DISK, MEMORY, FILE)"),
+    Column("size", BIGINT, "The expected size of the acquisition"),
+    Column("status", TEXT, "The ongoing status of the acquisition"),
+    Column("time", BIGINT, "How long the acquisition has been running for"),
+])
+implementation("forensic/acquisition@genAcquisition")
