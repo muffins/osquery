@@ -32,7 +32,7 @@ namespace pt = boost::property_tree;
 namespace osquery {
 
 FLAG(string,
-     acquisition_write_endpoint,
+     acquisition_tls_write_endpoint,
      "",
      "TLS/HTTPS endpoint for acquisition results");
 
@@ -53,10 +53,13 @@ class TLSAcquisitionPlugin : public AcquisitionPlugin {
 REGISTER(TLSAcquisitionPlugin, "acquisition", "tls");
 
 Status TLSAcquisitionPlugin::setUp() {
+  write_uri_ = TLSRequestHelper::makeURI(FLAGS_acquisition_tls_write_endpoint);
   return Status(0, "OK");
 }
 
 Status TLSAcquisitionPlugin::sendAcquisitions() {
+  LOG(INFO) << "Sending Acquisitions";
+  //std::string chunk = getGuidChunk();
   return Status(0);
 }
 }

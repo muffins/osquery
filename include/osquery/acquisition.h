@@ -49,6 +49,9 @@ class Acquisition {
   /// Executes all pending file carves
   Status executePendingFileCarves();
 
+  /// Get a chunk of a carve
+  Status getGuidChunk(const std::string& guid, unsigned int chunk_number, std::string& chunk);
+
  private:
   const std::string acquisitionPrefix_ = "acquisition.";
   const fs::path acquisitionStore_ =
@@ -56,6 +59,9 @@ class Acquisition {
   QueryData pendingCarves_;
   /// Helper function to create the Acquisition FS
   Status makeAcquisitionFS();
+
+  std::map<std::string, std::string> guidToMap(
+                                      const std::string& guid);
 
   /**
    * @brief carves a specified file from the disk and stores it in the store

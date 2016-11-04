@@ -42,6 +42,12 @@ EXAMPLE_DISTRIBUTED = {
     }
 }
 
+EXAMPLE_DISTRIBUTED_ACQUIRE = {
+    "queries": {
+        "carve_file": "select * from acquire_file where path='/tmp/testdata'",
+    }
+}
+
 EXAMPLE_DISTRIBUTED_ACCELERATE = {
     "queries": {
         "info": "select * from osquery_info",
@@ -174,7 +180,7 @@ class RealSimpleHandler(BaseHTTPRequestHandler):
         if "node_key" not in request or request["node_key"] not in NODE_KEYS:
             self._reply(FAILED_ENROLL_RESPONSE)
             return
-        self._reply(EXAMPLE_DISTRIBUTED)
+        self._reply(EXAMPLE_DISTRIBUTED_ACQUIRE)
 
     def distributed_write(self, request):
         '''A basic distributed write endpoint'''

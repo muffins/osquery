@@ -13,11 +13,17 @@
 #include <osquery/sql.h>
 
 #include "osquery/core/json.h"
+#include "osquery/filesystem/fileops.h"
 
 namespace fs = boost::filesystem;
 namespace pt = boost::property_tree;
 
 namespace osquery {
+
+FLAG(uint64,
+     acquisition_chunk_size,
+     4194000,
+     "Default chunking size (default: 4MiB)");
 
 FLAG(bool,
      disable_acquisition,
@@ -43,6 +49,49 @@ Status AcquisitionPlugin::call(const PluginRequest& request,
 
 Acquisition::Acquisition() {
   Status s = makeAcquisitionFS();
+}
+
+std::map<std::string, std::string> Acquisition::guidToMap(
+                                    const std::string& guid) {
+  std::string json;
+  getDatabaseValue(kQueries, acquisitionPrefix_+guid, json);
+  pt::ptree tree;
+  try {
+    std::stringstream input;
+    input << json;
+    pt::read_json(input, tree);
+  }catch(const pt::json_parser::json_parser_error& e){
+    return {};
+  }
+  std::map<std::string, std::string> file_data;
+  for (const auto& elem : tree){
+    file_data[elem.first] = tree.get<std::string>(elem.first);
+  }
+  return file_data;
+}
+
+Status Acquisition::getGuidChunk(const std::string& guid,
+                                unsigned int chunk_number, std::string& chunk) {
+  std::map<std::string, std::string> file_data = guidToMap(guid);
+  PlatformFile pf(file_data["path"], PF_READ);
+  unsigned long seek_location = chunk_number*FLAGS_acquisition_chunk_size;
+  if (seek_location > pf.size()) {
+    return Status(1, "Seeked past end");
+  }
+  std::vector<char> tmp;
+  pf.seek(seek_location, PF_SEEK_BEGIN);
+
+  if (pf.size() - seek_location < FLAGS_acquisition_chunk_size){
+    tmp.reserve(pf.size() - seek_location);
+    pf.read(tmp.data(), pf.size() - seek_location);
+    chunk = std::string(tmp.data());
+    return Status(0);
+  }
+
+  tmp.reserve(FLAGS_acquisition_chunk_size);
+  pf.read(tmp.data(), FLAGS_acquisition_chunk_size);
+  chunk = std::string(tmp.data());
+  return Status(0);
 }
 
 Status Acquisition::getPendingFileCarves() {
