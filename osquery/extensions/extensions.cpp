@@ -483,10 +483,17 @@ Status startExtension(const std::string& manager_path,
 
   // Set the active config and logger plugins. The core will arbitrate if the
   // plugins are not available in the extension's local registry.
+<<<<<<< 6332ab46422d36e46840673b59c3337cc12d0636
   auto& rf = RegistryFactory::get();
   rf.setActive("config", options["config_plugin"].value);
   rf.setActive("logger", options["logger_plugin"].value);
   rf.setActive("distributed", options["distributed_plugin"].value);
+=======
+  Registry::setActive("config", options["config_plugin"].value);
+  Registry::setActive("logger", options["logger_plugin"].value);
+  Registry::setActive("distributed", options["distributed_plugin"].value);
+  Registry::setActive("acquisition", options["acquisition_plugin"].value);
+>>>>>>> Acquisition Plugin Structure
   // Set up all lazy registry plugins and the active config/logger plugin.
   rf.setUp();
 

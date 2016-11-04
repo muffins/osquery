@@ -72,6 +72,7 @@ DECLARE_string(logger_plugin);
 DECLARE_string(logger_path);
 DECLARE_string(logger_tls_endpoint);
 DECLARE_string(distributed_plugin);
+DECLARE_string(acquisition_plugin);
 DECLARE_string(config_plugin);
 DECLARE_string(config_path);
 DECLARE_string(config_tls_endpoint);
@@ -1145,6 +1146,11 @@ inline void meta_show(struct callback_data* p) {
   } else {
     fprintf(p->out, "\n");
   }
+
+  fprintf(p->out,
+          "%13.13s: %s\n",
+          "Acquisition",
+          osquery::FLAGS_acquisition_plugin.c_str());
 
   {
     auto results = osquery::SQL::selectAllFrom("osquery_extensions");

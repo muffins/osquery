@@ -27,7 +27,7 @@ namespace osquery {
 class AcquisitionPlugin : public Plugin {
  public:
 
-  virtual Status sendCarves() = 0;
+  virtual Status sendAcquisitions() = 0;
 
   /// Main entrypoint for distirbuted plugin requests
   Status call(const PluginRequest& request, PluginResponse& response) override;

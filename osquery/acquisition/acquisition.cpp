@@ -21,12 +21,26 @@ namespace osquery {
 
 FLAG(bool,
      disable_acquisition,
-     true,
-     "Disable acquisition engine (default true)");
+     false,
+     "Disable acquisition engine (default false)");
 
 CREATE_REGISTRY(AcquisitionPlugin, "acquisition");
 
 FLAG(string, acquisition_plugin, "tls", "Acquisition plugin name");
+
+Status AcquisitionPlugin::call(const PluginRequest& request,
+                               PluginResponse& response) {
+
+   if (request.count("action") == 0) {
+     return Status(1, "Acquisition plugins require an action in PluginRequest");
+   }
+
+   if (request.at("action") == "sendCarves") {
+     return Status(0, "OK");
+   }
+   return Status(1,
+                 "Acquisition plugin action unknown: " + request.at("action"));
+}
 
 Acquisition::Acquisition() {
   Status s = makeAcquisitionFS();
