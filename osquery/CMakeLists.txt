@@ -135,7 +135,7 @@ endif()
 set(OSQUERY_OBJECTS $<TARGET_OBJECTS:osquery_sqlite>)
 
 # Add subdirectories
-#add_subdirectory(acquisition)
+add_subdirectory(acquisition)
 add_subdirectory(config)
 add_subdirectory(core)
 add_subdirectory(database)
