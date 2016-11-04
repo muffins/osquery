@@ -9,6 +9,7 @@
  */
 
 #include <osquery/dispatcher.h>
+#include <osquery/logger.h>
 
 #pragma once
 
@@ -18,7 +19,9 @@ namespace osquery {
 class AcquisitionRunner : public InternalRunnable {
  public:
   virtual ~AcquisitionRunner() {}
-  AcquisitionRunner() {}
+  AcquisitionRunner() {
+    LOG(INFO) << "Constructing new Acquisition Engine";
+  }
 
  public:
   /// The Acquisition thread entry point.

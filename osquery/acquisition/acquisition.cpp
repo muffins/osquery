@@ -24,26 +24,58 @@ FLAG(bool,
      false, // TODO: Changeme when done.
      "Disable acuisition engine (default true)");
 
+Acquisition::Acquisition() {
+  Status s = makeAcquisitionFS();
+}
+
 void Acquisition::getPendingFileCarves() {
   pendingCarves_.clear();
+  std::vector<std::string> fileAcquisitions;
+  scanDatabaseKeys(kQueries, fileAcquisitions, acquisitionPrefix_);
+
+  for (const auto& key : fileAcquisitions) {
+    std::string json;
+    pt::ptree tree;
+    getDatabaseValue(kQueries, key, json);
+    try {
+      std::stringstream ss(json);
+      pt::read_json(ss, tree);
+    } catch (const pt::ptree_error& e) {
+      return;
+    }
+    if (tree.get<std::string>("status") != "PENDING") {
+      continue;
+    }
+    Row r;
+    r["guid"] = key.substr(acquisitionPrefix_.size());
+    r["location"] = SQL_TEXT(tree.get<std::string>("location"));
+    r["type"] = SQL_TEXT(tree.get<std::string>("type"));
+    r["size"] = INTEGER(tree.get<int>("size"));
+    r["status"] = SQL_TEXT(tree.get<std::string>("status"));
+    pendingCarves_.push_back(r);
+  }
+
   pendingCarves_ =
-      SQL::selectAllFrom("acquire_file", "status", EQUALS, "PENDING");
+      SQL::selectAllFrom("acquisitions", "status", EQUALS, "PENDING");
 }
 
 void Acquisition::executePendingFileCarves() {
+  LOG(INFO) << "[+] Carving " << pendingCarves_.size() << " files.";
+
   if (pendingCarves_.size() == 0) {
     return;
   }
 
   for (auto& r : pendingCarves_) {
+    LOG(INFO) << "[+] File: " << r["location"];
     // TODO: Consider creating the GUID of each Carve task here.
-    Status s = carveFile(r["path"]);
+    Status s = carveFile(r["location"]);
     if (!s.ok()) {
       continue;
     }
     // Update the value in the database
     pt::ptree tree;
-    tree.put("location", r["path"]);
+    tree.put("location", r["location"]);
     // TODO: Consider adding a 'FAILED' status?
     tree.put("status", "COMPLETE");
     tree.put("size", r["size"]);

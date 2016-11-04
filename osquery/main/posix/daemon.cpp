@@ -13,6 +13,7 @@
 #include <osquery/logger.h>
 #include <osquery/system.h>
 
+#include "osquery/dispatcher/acquisition.h"
 #include "osquery/dispatcher/distributed.h"
 #include "osquery/dispatcher/scheduler.h"
 
@@ -36,6 +37,12 @@ int main(int argc, char* argv[]) {
   auto s = osquery::startDistributed();
   if (!s.ok()) {
     VLOG(1) << "Not starting the distributed query service: " << s.toString();
+  }
+
+  // Conditionally begin the distributed query service
+  s = osquery::startAcquisition();
+  if (!s.ok()) {
+    VLOG(1) << "Not starting the acquisition service: " << s.toString();
   }
 
   // Begin the schedule runloop.

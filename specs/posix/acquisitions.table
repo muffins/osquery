@@ -1,4 +1,4 @@
-table_name("acquisition")
+table_name("acquisitions")
 description("Information on ongoing and completed acquisition requests")
 schema([
     Column("guid", TEXT, "Random ID for the acquisition"),
@@ -8,4 +8,4 @@ schema([
     Column("status", TEXT, "The ongoing status of the acquisition"),
     Column("time", BIGINT, "How long the acquisition has been running for"),
 ])
-implementation("forensic/acquisition@genAcquisition")
+implementation("forensic/acquisitions@genAcquisitions")

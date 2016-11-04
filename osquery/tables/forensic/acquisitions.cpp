@@ -10,8 +10,8 @@
 #include <osquery/core.h>
 #include <osquery/distributed.h>
 #include <osquery/logger.h>
-#include <osquery/tables.h>
 #include <osquery/system.h>
+#include <osquery/tables.h>
 
 #include "osquery/core/json.h"
 
@@ -21,12 +21,12 @@ namespace osquery {
 namespace tables {
 const std::string kAcquisitionQueryPrefix = "acquisition.";
 
-QueryData genAcquisition(QueryContext& context) {
+QueryData genAcquisitions(QueryContext& context) {
   QueryData results;
 
   std::vector<std::string> acquisition_paths;
   scanDatabaseKeys(kQueries, acquisition_paths, kAcquisitionQueryPrefix);
-  for (const auto& key : acquisition_paths){
+  for (const auto& key : acquisition_paths) {
     Row r;
     std::string json;
     pt::ptree tree;
@@ -42,8 +42,8 @@ QueryData genAcquisition(QueryContext& context) {
     r["type"] = SQL_TEXT(tree.get<std::string>("type"));
     r["size"] = INTEGER(tree.get<int>("size"));
     r["status"] = SQL_TEXT(tree.get<std::string>("status"));
-    if(r["status"] == "COMPLETED") {
-        r["time"] = INTEGER(tree.get<int>("start_time"));
+    if (r["status"] == "COMPLETED") {
+      r["time"] = INTEGER(tree.get<int>("start_time"));
     } else {
       r["time"] = INTEGER(getUnixTime() - tree.get<int>("start_time"));
     }

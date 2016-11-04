@@ -7,19 +7,19 @@
  *  of patent rights can be found in the PATENTS file in the same directory.
  *
  */
- #include <sys/stat.h>
+#include <sys/stat.h>
 
- #include <boost/filesystem.hpp>
- #include <boost/uuid/uuid.hpp>
- #include <boost/uuid/uuid_generators.hpp>
- #include <boost/uuid/uuid_io.hpp>
+#include <boost/filesystem.hpp>
+#include <boost/uuid/uuid.hpp>
+#include <boost/uuid/uuid_generators.hpp>
+#include <boost/uuid/uuid_io.hpp>
 
 #include <osquery/core.h>
 #include <osquery/distributed.h>
 #include <osquery/filesystem.h>
 #include <osquery/logger.h>
-#include <osquery/tables.h>
 #include <osquery/system.h>
+#include <osquery/tables.h>
 
 #include "osquery/core/json.h"
 
@@ -30,27 +30,27 @@ namespace osquery {
 namespace tables {
 const std::string kAcquisitionQueryPrefix = "acquisition.";
 
-void scheduleFileAcquisition(const fs::path& path,
-                 QueryData& results) {
-   // Must provide the path, filename, directory separate from boost path->string
-   // helpers to match any explicit (query-parsed) predicate constraints.
-  #if !defined(WIN32)
-   // On POSIX systems, first check the link state.
-   struct stat link_stat;
-   if (lstat(path.string().c_str(), &link_stat) < 0) {
-     // Path was not real, had too may links, or could not be accessed.
-     return;
-   }
-  #endif
+void scheduleFileAcquisition(const fs::path& path, QueryData& results) {
+// Must provide the path, filename, directory separate from boost path->string
+// helpers to match any explicit (query-parsed) predicate constraints.
+#if !defined(WIN32)
+  // On POSIX systems, first check the link state.
+  struct stat link_stat;
+  if (lstat(path.string().c_str(), &link_stat) < 0) {
+    // Path was not real, had too may links, or could not be accessed.
+    return;
+  }
+#endif
 
-   struct stat file_stat;
-   if (stat(path.string().c_str(), &file_stat)) {
-     // Path was not real, had too may links, or could not be accessed.
-     return;
-   }
+  struct stat file_stat;
+  if (stat(path.string().c_str(), &file_stat)) {
+    // Path was not real, had too may links, or could not be accessed.
+    return;
+  }
 
   Row r;
-  std::string uuid = boost::uuids::to_string(boost::uuids::random_generator()());
+  std::string uuid =
+      boost::uuids::to_string(boost::uuids::random_generator()());
   r["guid"] = SQL_TEXT(uuid);
   r["path"] = SQL_TEXT(path.string());
   r["size"] = BIGINT(file_stat.st_size);
@@ -65,7 +65,7 @@ void scheduleFileAcquisition(const fs::path& path,
 
   std::ostringstream os;
   pt::write_json(os, tree, false);
-  setDatabaseValue(kQueries, kAcquisitionQueryPrefix+uuid, os.str());
+  setDatabaseValue(kQueries, kAcquisitionQueryPrefix + uuid, os.str());
   results.push_back(r);
 }
 

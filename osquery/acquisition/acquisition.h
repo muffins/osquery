@@ -21,9 +21,8 @@ namespace osquery {
 class Acquisition {
  public:
   /// Default constructor
-  Acquisition() {
-    makeAcquisitionFS();
-  };
+  Acquisition();
+
   /// Default destructor
   ~Acquisition(){};
 
