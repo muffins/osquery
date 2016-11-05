@@ -33,13 +33,12 @@ class AcquisitionPlugin : public Plugin {
   Status call(const PluginRequest& request, PluginResponse& response) override;
 };
 
-class Acquisition {
+class Acquisition : private boost::noncopyable {
  public:
-  /// Default constructor
-  Acquisition();
-
-  /// Default destructor
-  ~Acquisition(){};
+  static Acquisition& instance() {
+    static Acquisition instance;
+    return instance;
+  }
 
   /// Retrieve all pending file carve operations from the acquire_file table
   Status getPendingFileCarves();
@@ -52,6 +51,9 @@ class Acquisition {
                       unsigned int chunk_number,
                       std::string& chunk);
 
+  /// Get a GUID that needs to be sent
+  std::string guidToSend();
+
   /// Helper function to return a row, given a GUID
   Row getRowByGuid(const std::string& guid);
 
@@ -59,6 +61,10 @@ class Acquisition {
   Status updateRowByGuid(const Row& r, const std::string& guid);
 
  private:
+  /// Private constructor
+  Acquisition();
+  /// Private destructor
+  virtual ~Acquisition(){}
   const std::string acquisitionPrefix_ = "acquisition.";
   const fs::path acquisitionStore_ =
       fs::temp_directory_path() / std::string{"osquery-acquisitions"};

@@ -45,8 +45,8 @@ Status AcquisitionPlugin::call(const PluginRequest& request,
     return Status(1, "Acquisition plugins require an action in PluginRequest");
   }
 
-  if (request.at("action") == "sendCarves") {
-    return Status(0, "OK");
+  if (request.at("action") == "sendAcquisitions") {
+    return sendAcquisitions();
   }
   return Status(1,
                 "Acquisition plugin action unknown: " + request.at("action"));
@@ -173,6 +173,17 @@ Row Acquisition::getRowByGuid(const std::string& guid) {
 
   return r;
 }
+
+/// Helper function to return a row, given a GUID
+std::string Acquisition::guidToSend() {
+  if(completedCarves_.empty()){
+    return "";
+  }
+  std::string guid = completedCarves_.front();
+  completedCarves_.pop();
+  return guid;
+}
+
 
 Status Acquisition::executePendingFileCarves() {
   if (pendingCarves_.size() == 0) {

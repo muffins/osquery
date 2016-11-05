@@ -34,11 +34,10 @@ DECLARE_bool(disable_acquisition);
 const size_t kAcquisitionAccelerationInterval = 5;
 
 void AcquisitionRunner::start() {
-  auto acq = Acquisition();
 
   while (!interrupted()) {
-    acq.getPendingFileCarves();
-    acq.executePendingFileCarves();
+    Acquisition::instance().getPendingFileCarves();
+    Acquisition::instance().executePendingFileCarves();
 
     std::string str_acu = "0";
     Status database = getDatabaseValue(

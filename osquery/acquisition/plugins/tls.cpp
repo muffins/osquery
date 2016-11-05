@@ -58,8 +58,12 @@ Status TLSAcquisitionPlugin::setUp() {
 }
 
 Status TLSAcquisitionPlugin::sendAcquisitions() {
-  LOG(INFO) << "Sending Acquisitions";
-  //std::string chunk = getGuidChunk();
+  std::string guid;
+  while (true){
+    guid = Acquisition::instance().guidToSend();
+    if(guid == ""){break;}
+
+  }
   return Status(0);
 }
 }
