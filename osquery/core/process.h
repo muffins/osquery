@@ -180,6 +180,9 @@ class PlatformProcess : private boost::noncopyable {
 };
 
 #ifdef WIN32
+/// Returns the current exting thread users Security Identifier
+std::string getUserSid();
+
 /**
  * @brief Handles the resource lifetime of a PSECURITY_DESCRIPTOR
  *
