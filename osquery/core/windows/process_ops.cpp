@@ -15,10 +15,7 @@
 #include <LM.h>
 // clang-format on
 
-#include <string>
 #include <vector>
-
-#include <boost/optional.hpp>
 
 #include <osquery/system.h>
 
@@ -28,8 +25,8 @@
 namespace osquery {
 
 int platformGetUid() {
-  DWORD nbytes = 0;
-  HANDLE token = INVALID_HANDLE_VALUE;
+  unsigned long nbytes = 0;
+  auto token = INVALID_HANDLE_VALUE;
 
   if (!::OpenProcessToken(::GetCurrentProcess(), TOKEN_QUERY, &token)) {
     return -1;
@@ -45,7 +42,7 @@ int platformGetUid() {
   tu_buffer.assign(nbytes, '\0');
   PTOKEN_USER tu = nullptr;
 
-  BOOL status = ::GetTokenInformation(token,
+  auto status = ::GetTokenInformation(token,
                                       TokenUser,
                                       tu_buffer.data(),
                                       static_cast<DWORD>(tu_buffer.size()),
@@ -55,11 +52,11 @@ int platformGetUid() {
     return -1;
   }
 
-  LPSTR sid = nullptr;
+  char* sid = nullptr;
   tu = (PTOKEN_USER)tu_buffer.data();
   SID_NAME_USE eUse = SidTypeUnknown;
-  DWORD unameSize = 0;
-  DWORD domNameSize = 1;
+  unsigned long unameSize = 0;
+  unsigned long domNameSize = 1;
 
   // LookupAccountSid first gets the size of the username buff required.
   LookupAccountSid(
@@ -80,7 +77,7 @@ int platformGetUid() {
   }
 
   // USER_INFO_3 struct contains the RID (uid) of our user
-  DWORD userInfoLevel = 3;
+  unsigned long userInfoLevel = 3;
   LPUSER_INFO_3 userBuff = nullptr;
   std::wstring wideUserName = stringToWstring(std::string(uname.data()));
   ret = NetUserGetInfo(
@@ -92,6 +89,33 @@ int platformGetUid() {
 
   ::LocalFree(sid);
   return userBuff->usri3_user_id;
+}
+
+std::string getUserSid() {
+  HANDLE hToken;
+  auto ret = OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &hToken);
+  if (ret == false) {
+    return "";
+  }
+
+  unsigned long dwBufferSize = 0;
+  ret = GetTokenInformation(hToken, TokenUser, nullptr, 0, &dwBufferSize);
+  if (!ret) {
+    return "";
+  }
+  auto pTokenUser = (PTOKEN_USER) new BYTE[dwBufferSize];
+  memset(pTokenUser, 0, dwBufferSize);
+  ret = GetTokenInformation(
+      hToken, TokenUser, pTokenUser, dwBufferSize, &dwBufferSize);
+  if (ret == 0) {
+    CloseHandle(hToken);
+    return "";
+  }
+  CloseHandle(hToken);
+  std::vector<char> sid(MAX_SIZE_SECURITY_ID, 0x0);
+  ConvertSidToStringSidA(pTokenUser->User.Sid,
+                         reinterpret_cast<LPSTR*>(sid.data()));
+  return std::string(sid.data());
 }
 
 bool isLauncherProcessDead(PlatformProcess& launcher) {

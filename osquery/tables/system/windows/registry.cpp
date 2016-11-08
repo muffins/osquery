@@ -8,6 +8,9 @@
  *
  */
 
+// TODO: Remember to remove this :P
+#include <iostream>
+
 #include <stdlib.h>
 
 #define _WIN32_DCOM
@@ -25,7 +28,9 @@
 #include <osquery/core.h>
 #include <osquery/tables.h>
 
+#include "osquery/core/process.h"
 #include "osquery/filesystem/fileops.h"
+#include "osquery/tables/system/system_utils.h"
 #include "osquery/tables/system/windows/registry.h"
 
 namespace fs = boost::filesystem;
@@ -45,7 +50,7 @@ const std::map<std::string, HKEY> kRegistryHives = {
     {"HKEY_USERS", HKEY_USERS},
 };
 
-const std::map<DWORD, std::string> kRegistryTypes = {
+const std::map<unsigned long, std::string> kRegistryTypes = {
     {REG_BINARY, "REG_BINARY"},
     {REG_DWORD, "REG_DWORD"},
     {REG_DWORD_BIG_ENDIAN, "REG_DWORD_BIG_ENDIAN"},
@@ -68,31 +73,30 @@ void queryKey(const std::string& hive,
   }
 
   HKEY hRegistryHandle;
-  auto ret = RegOpenKeyEx(kRegistryHives.at(hive),
-                          TEXT(key.c_str()),
-                          0,
-                          KEY_READ,
-                          &hRegistryHandle);
+  auto retCode = RegOpenKeyEx(kRegistryHives.at(hive),
+                              TEXT(key.c_str()),
+                              0,
+                              KEY_READ,
+                              &hRegistryHandle);
 
-  if (ret != ERROR_SUCCESS) {
+  if (retCode != ERROR_SUCCESS) {
     return;
   }
 
-  const DWORD maxKeyLength = 255;
-  const DWORD maxValueName = 16383;
-  TCHAR achClass[MAX_PATH] = TEXT("");
-  DWORD cchClassName = MAX_PATH;
-  DWORD cSubKeys = 0;
-  DWORD cbMaxSubKey;
-  DWORD cchMaxClass;
-  DWORD cValues;
-  DWORD cchMaxValueName;
-  DWORD cbMaxValueData;
-  DWORD cbSecurityDescriptor;
-  DWORD retCode;
+  const unsigned long maxKeyLength = 255;
+  const unsigned long maxValueName = 16383;
+  std::vector<char> achClass(MAX_PATH);
+  unsigned long cchClassName = MAX_PATH;
+  unsigned long cSubKeys = 0;
+  unsigned long cbMaxSubKey;
+  unsigned long cchMaxClass;
+  unsigned long cValues;
+  unsigned long cchMaxValueName;
+  unsigned long cbMaxValueData;
+  unsigned long cbSecurityDescriptor;
   FILETIME ftLastWriteTime;
   retCode = RegQueryInfoKey(hRegistryHandle,
-                            achClass,
+                            achClass.data(),
                             &cchClassName,
                             nullptr,
                             &cSubKeys,
@@ -104,16 +108,20 @@ void queryKey(const std::string& hive,
                             &cbSecurityDescriptor,
                             &ftLastWriteTime);
 
-  TCHAR achKey[maxKeyLength];
-  DWORD cbName;
+  if (retCode != ERROR_SUCCESS) {
+    return;
+  }
+
+  std::vector<char> achKey(maxKeyLength);
+  unsigned long cbName;
 
   // Process registry subkeys
   if (cSubKeys > 0) {
-    for (DWORD i = 0; i < cSubKeys; i++) {
+    for (unsigned long i = 0; i < cSubKeys; i++) {
       cbName = maxKeyLength;
       retCode = RegEnumKeyEx(hRegistryHandle,
                              i,
-                             achKey,
+                             achKey.data(),
                              &cbName,
                              nullptr,
                              nullptr,
@@ -139,19 +147,17 @@ void queryKey(const std::string& hive,
     return;
   }
 
-  BYTE* bpDataBuff = new BYTE[cbMaxValueData];
-  DWORD cchValue = maxKeyLength;
-  TCHAR achValue[maxValueName];
+  auto bpDataBuff = new unsigned char[cbMaxValueData];
+  auto cchValue = maxKeyLength;
+  char achValue[maxValueName];
 
   // Process registry values
-  for (size_t i = 0, retCode = ERROR_SUCCESS; i < cValues; i++) {
-    size_t cnt = 0;
+  for (unsigned long i = 0; i < cValues; i++) {
     ZeroMemory(bpDataBuff, cbMaxValueData);
     cchValue = maxValueName;
     achValue[0] = '\0';
-
     retCode = RegEnumValue(hRegistryHandle,
-                           static_cast<DWORD>(i),
+                           i,
                            achValue,
                            &cchValue,
                            nullptr,
@@ -163,10 +169,10 @@ void queryKey(const std::string& hive,
       continue;
     }
 
-    DWORD lpData = cbMaxValueData;
-    DWORD lpType;
+    auto lpData = cbMaxValueData;
+    unsigned long lpType;
     retCode = RegQueryValueEx(
-        hRegistryHandle, achValue, 0, &lpType, bpDataBuff, &lpData);
+        hRegistryHandle, achValue, nullptr, &lpType, bpDataBuff, &lpData);
 
     if (retCode != ERROR_SUCCESS) {
       continue;
@@ -196,11 +202,11 @@ void queryKey(const std::string& hive,
       wcstombs_s(&convertedChars,
                  regLinkStr,
                  newSize,
-                 (wchar_t*)bpDataBuff,
+                 reinterpret_cast<wchar_t*>(bpDataBuff),
                  _TRUNCATE);
     }
 
-    BYTE* bpDataBuffTmp = bpDataBuff;
+    auto bpDataBuffTmp = bpDataBuff;
     std::vector<std::string> multiSzStrs;
     std::vector<char> regBinary;
     std::string data;
@@ -209,41 +215,43 @@ void queryKey(const std::string& hive,
     case REG_FULL_RESOURCE_DESCRIPTOR:
     case REG_RESOURCE_LIST:
     case REG_BINARY:
-      for (unsigned int i = 0; i < cbMaxValueData; i++) {
-        regBinary.push_back((char)bpDataBuff[i]);
+      for (size_t j = 0; j < cbMaxValueData; j++) {
+        regBinary.push_back(static_cast<char>(bpDataBuff[j]));
       }
       boost::algorithm::hex(
           regBinary.begin(), regBinary.end(), std::back_inserter(data));
       r["data"] = data;
       break;
     case REG_DWORD:
-      r["data"] = std::to_string(*((int*)bpDataBuff));
+      r["data"] = std::to_string(*reinterpret_cast<int*>(bpDataBuff));
       break;
     case REG_DWORD_BIG_ENDIAN:
-      r["data"] = std::to_string(_byteswap_ulong(*((int*)bpDataBuff)));
+      r["data"] =
+          std::to_string(_byteswap_ulong(*reinterpret_cast<int*>(bpDataBuff)));
       break;
     case REG_EXPAND_SZ:
-      r["data"] = std::string((char*)bpDataBuff);
+      r["data"] = std::string(reinterpret_cast<char*>(bpDataBuff));
       break;
     case REG_LINK:
       r["data"] = std::string(regLinkStr);
       break;
     case REG_MULTI_SZ:
       while (*bpDataBuffTmp != 0x00) {
-        std::string s((char*)bpDataBuffTmp);
+        std::string s(reinterpret_cast<char*>(bpDataBuffTmp));
         bpDataBuffTmp += s.size() + 1;
         multiSzStrs.push_back(s);
       }
       r["data"] = boost::algorithm::join(multiSzStrs, ",");
       break;
     case REG_NONE:
-      r["data"] = std::string((char*)bpDataBuff);
+      r["data"] = std::string(reinterpret_cast<char*>(bpDataBuff));
       break;
     case REG_QWORD:
-      r["data"] = std::to_string(*((unsigned long long*)bpDataBuff));
+      r["data"] =
+          std::to_string(*reinterpret_cast<unsigned long long*>(bpDataBuff));
       break;
     case REG_SZ:
-      r["data"] = std::string((char*)bpDataBuff);
+      r["data"] = std::string(reinterpret_cast<char*>(bpDataBuff));
       break;
     default:
       r["data"] = "";
@@ -262,6 +270,7 @@ QueryData genRegistry(QueryContext& context) {
   QueryData results;
   std::set<std::string> rHives;
   std::set<std::string> rKeys;
+  std::set<std::string> rUsers;
 
   /// By default, we display all HIVEs
   if (context.constraints["hive"].exists(EQUALS) &&
@@ -281,11 +290,34 @@ QueryData genRegistry(QueryContext& context) {
     rKeys.insert("");
   }
 
-  for (const auto& hive : rHives) {
-    for (const auto& key : rKeys) {
-      queryKey(hive, key, results);
+  /// By default, we display all keys in each HIVE
+  if (context.constraints["uid"].exists(EQUALS) &&
+      context.constraints["uid"].getAll(EQUALS).size() > 0) {
+    rUsers = context.constraints["uid"].getAll(EQUALS);
+  } else {
+    /// If the user doesn't specify a context (sid), we specify the current user.
+    rUsers.insert(std::to_string(platformGetUid()));
+  }
+
+  auto contextUsers = usersFromContext(context);
+
+  for (auto& hive : rHives) {
+    for (auto& key : rKeys) {
+      // TODO: Let's consider warning users leveraging 'HKCU' that this is
+      // TODO: querying against the current executing users SID
+      if (hive.find("CURRENT_USER") != std::string::npos) {
+        /// We map the current_user HIVE to the HKEY_USERS hive using the SID
+        auto userHive = std::string("HKEY_USERS");
+        for (const auto& user : contextUsers) {
+          auto userKey = user.at("uuid") + std::string("\\") + key;
+          queryKey(userHive, userKey, results);
+        }
+      } else {
+        queryKey(hive, key, results);
+      }
     }
   }
+
   return results;
 }
 }
