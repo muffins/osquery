@@ -208,13 +208,13 @@ function Install-ThirdParty {
   #      Once our chocolatey packages are added to the official repository, installing the third-party
   #      dependencies will be as easy as Install-ChocoPackage '<package-name>'.
   $packages = @(
-    "boost-msvc14.1.59.0",
+    "boost-msvc14.1.62.0",
     "bzip2.1.0.6",
     "doxygen.1.8.11",
     "gflags-dev.2.1.2",
     "glog.0.3.4",
-    "openssl.1.0.2",
-    "rocksdb.4.4",
+    "openssl.1.0.2-j",
+    "rocksdb.4.11.2",
     "snappy-msvc.1.1.1.8",
     "thrift-dev.0.9.3",
     "cpp-netlib.0.12.0-r1",
@@ -325,10 +325,10 @@ function Main {
       Exit 0
     }
 
-    if ($PSVersionTable.PSVersion.Major -lt 5.1 ) {
-      Write-Host "[*] Powershell version is < 5.1. Skipping Powershell Linter Installation." -foregroundcolor yellow
-    } else {
+    if ($PSVersionTable.PSVersion.Major -ge 5 -and $PSVersionTable.PSVersion.Minor -ge 1) {
       $out = Install-PowershellLinter
+    } else {
+      Write-Host "[*] Powershell version is < 5.1. Skipping Powershell Linter Installation." -foregroundcolor yellow
     }
   }
   $out = Install-ThirdParty
