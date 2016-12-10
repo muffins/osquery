@@ -9,13 +9,13 @@
  */
 
 #include <map>
-#include <string>
 
 #define _WIN32_DCOM
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 #include <psapi.h>
 #include <stdlib.h>
+#include <tlhelp32.h>
 
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/trim.hpp>
@@ -26,8 +26,9 @@
 #include <osquery/logger.h>
 #include <osquery/tables.h>
 
+#include <osquery/filesystem/fileops.h>
+#include <osquery/system.h>
 #include "osquery/core/conversions.h"
-#include "osquery/core/utils.h"
 #include "osquery/core/windows/wmi.h"
 
 namespace osquery {
@@ -35,96 +36,118 @@ int getUidFromSid(PSID sid);
 int getGidFromSid(PSID sid);
 namespace tables {
 
-std::set<long> getSelectedPids(const QueryContext& context) {
-  std::set<long> pidlist;
-  if (context.constraints.count("pid") > 0 &&
-      context.constraints.at("pid").exists(EQUALS)) {
-    for (const auto& pid : context.constraints.at("pid").getAll<int>(EQUALS)) {
-      if (pid > 0) {
-        pidlist.insert(pid);
-      }
-    }
-  }
+void setSeDbgPrivs(bool enable) {
+  HANDLE procTok;
+  OpenProcessToken(
+      GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &procTok);
 
-  /// If there are no constraints, pidlist will be an empty set
-  return pidlist;
+  TOKEN_PRIVILEGES tp;
+  LUID luid;
+  LookupPrivilegeValue(nullptr, SE_DEBUG_NAME, &luid);
+
+  tp.PrivilegeCount = 1;
+  tp.Privileges[0].Luid = luid;
+  tp.Privileges[0].Attributes = enable ? SE_PRIVILEGE_ENABLED : 0;
+
+  AdjustTokenPrivileges(
+      procTok, false, &tp, sizeof(TOKEN_PRIVILEGES), nullptr, nullptr);
 }
 
-void genProcess(const WmiResultItem& result, QueryData& results_data) {
-  Row r;
-  Status s;
-  long pid;
-  long lPlaceHolder;
-  std::string sPlaceHolder;
-  HANDLE hProcess = nullptr;
-
-  /// Store current process pid for more efficient API use.
+void win32GenProcess(PROCESSENTRY32 procEntry, Row& r) {
+  auto pid = procEntry.th32ProcessID;
   auto currentPid = GetCurrentProcessId();
 
-  s = result.GetLong("ProcessId", pid);
-  r["pid"] = s.ok() ? BIGINT(pid) : BIGINT(-1);
+  r["pid"] = INTEGER(pid);
+  r["parent"] = INTEGER(procEntry.th32ParentProcessID);
+  r["nice"] = INTEGER(procEntry.pcPriClassBase);
+  r["name"] = procEntry.szExeFile;
+
+  std::vector<char> fileName(MAX_PATH + 1, 0x0);
+  unsigned long fileNameSize = MAX_PATH;
+
+  // setSeDbgPrivs(true);
+  /// If we can, open with QUERY_INFO and VM_READ, otherwise it's
+  /// likely the process is protected, so we open with QUERY_LIMITED_INFO
+  auto hProcess =
+      OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, 0, pid);
+  if (hProcess == nullptr) {
+    hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+  }
 
   long uid = -1;
   long gid = -1;
-  if (pid == currentPid) {
-    hProcess = GetCurrentProcess();
-  } else {
-    hProcess =
-        OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, false, pid);
-  }
-
   if (GetLastError() == ERROR_ACCESS_DENIED) {
     uid = 0;
     gid = 0;
   }
 
-  result.GetString("Name", r["name"]);
-  result.GetString("ExecutablePath", r["path"]);
-  result.GetString("CommandLine", r["cmdline"]);
-  result.GetString("ExecutionState", r["state"]);
-  result.GetLong("ParentProcessId", lPlaceHolder);
-  r["parent"] = BIGINT(lPlaceHolder);
-  result.GetLong("Priority", lPlaceHolder);
-  r["nice"] = INTEGER(lPlaceHolder);
+  QueryFullProcessImageName(hProcess, 0, fileName.data(), &fileNameSize);
+  r["path"] = SQL_TEXT(fileName.data());
   r["on_disk"] = osquery::pathExists(r["path"]).toString();
 
-  std::vector<char> fileName(MAX_PATH);
-  fileName.assign(MAX_PATH + 1, '\0');
-  if (pid == currentPid) {
-    GetModuleFileName(nullptr, fileName.data(), MAX_PATH);
-  } else {
-    GetModuleFileNameEx(hProcess, nullptr, fileName.data(), MAX_PATH);
-  }
-  r["cwd"] = SQL_TEXT(fileName.data());
-  r["root"] = r["cwd"];
+  FILETIME creationTime;
+  FILETIME exitTime;
+  FILETIME kernelTime;
+  FILETIME userTime;
+  auto ret = GetProcessTimes(
+      hProcess, &creationTime, &exitTime, &kernelTime, &userTime);
+  if (ret != 0) {
+    FILETIME ftCurrentTime;
+    SYSTEMTIME stCurrentTime;
+    GetSystemTime(&stCurrentTime);
+    SystemTimeToFileTime(&stCurrentTime, &ftCurrentTime);
+    auto startTime = filetimeToUnixtime(creationTime) -
+                (filetimeToUnixtime(ftCurrentTime) - (GetTickCount64() / 1000));
+    /// Kernel and User time values are ticks since proc start, as opposed to
+    /// ticks since Epoch
 
+    auto quadUserTime =
+      ((static_cast<unsigned long long>(userTime.dwHighDateTime) << 32) |
+        userTime.dwLowDateTime);
+    auto quadSysTime =
+      ((static_cast<unsigned long long>(kernelTime.dwHighDateTime) << 32) |
+        kernelTime.dwLowDateTime);
+
+    r["start_time"] = BIGINT(startTime);
+    r["user_time"] = BIGINT(quadUserTime / 10000000);
+    r["system_time"] = BIGINT(quadSysTime / 10000000);
+  } else {
+    r["start_time"] = BIGINT(-1);
+    r["user_time"] = BIGINT(-1);
+    r["system_time"] = BIGINT(-1);
+  }
+
+  PROCESS_MEMORY_COUNTERS_EX memCnt;
+  ret = GetProcessMemoryInfo(hProcess,
+                             (PROCESS_MEMORY_COUNTERS*)&memCnt,
+                             sizeof(PROCESS_MEMORY_COUNTERS_EX));
+  if (ret == 0) {
+    r["wired_size"] = BIGINT(-1);
+    r["resident_size"] = BIGINT(-1);
+    r["total_size"] = BIGINT(-1);
+  } else {
+    r["wired_size"] = BIGINT(memCnt.QuotaNonPagedPoolUsage);
+    r["resident_size"] = BIGINT(memCnt.PrivateUsage);
+    r["total_size"] = BIGINT(memCnt.WorkingSetSize);
+  }
+
+  // TODO:
+  r["state"] = "-1";
+  r["cmdline"] = "-1";
+  r["root"] = "-1";
+  r["cwd"] = "-1";
   r["pgroup"] = "-1";
   r["euid"] = "-1";
   r["suid"] = "-1";
   r["egid"] = "-1";
   r["sgid"] = "-1";
-  r["start_time"] = "0";
 
-  result.GetString("UserModeTime", sPlaceHolder);
-  long long llHolder;
-  osquery::safeStrtoll(sPlaceHolder, 10, llHolder);
-  r["user_time"] = BIGINT(llHolder / 10000000);
-  result.GetString("KernelModeTime", sPlaceHolder);
-  osquery::safeStrtoll(sPlaceHolder, 10, llHolder);
-  r["system_time"] = BIGINT(llHolder / 10000000);
-  result.GetString("PrivatePageCount", sPlaceHolder);
-  r["wired_size"] = BIGINT(sPlaceHolder);
-  result.GetString("WorkingSetSize", sPlaceHolder);
-  r["resident_size"] = sPlaceHolder;
-  result.GetString("VirtualSize", sPlaceHolder);
-  r["total_size"] = BIGINT(sPlaceHolder);
-
-  /// Get the process UID and GID from its SID
+  /// Get the process UID and GID from it's SID
   HANDLE tok = nullptr;
+  unsigned long tokOwnerBuffLen;
   std::vector<char> tokOwner(sizeof(TOKEN_OWNER), 0x0);
-  auto ret = OpenProcessToken(hProcess, TOKEN_READ, &tok);
-  if (ret != 0 && tok != nullptr) {
-    unsigned long tokOwnerBuffLen;
+  OpenProcessToken(hProcess, TOKEN_READ, &tok);
+  if (tok != nullptr) {
     ret = GetTokenInformation(tok, TokenOwner, nullptr, 0, &tokOwnerBuffLen);
     if (ret == 0 && GetLastError() == ERROR_INSUFFICIENT_BUFFER) {
       tokOwner.resize(tokOwnerBuffLen);
@@ -155,29 +178,38 @@ void genProcess(const WmiResultItem& result, QueryData& results_data) {
 QueryData genProcesses(QueryContext& context) {
   QueryData results;
 
-  std::string query = "SELECT * FROM Win32_Process";
+  /// Win32 APIs
+  HANDLE hProcessSnap;
+  PROCESSENTRY32 pe32;
 
-  auto pidlist = getSelectedPids(context);
-  if (pidlist.size() > 0) {
-    std::vector<std::string> constraints;
-    for (const auto& pid : pidlist) {
-      constraints.push_back("ProcessId=" + std::to_string(pid));
-    }
-    if (constraints.size() > 0) {
-      query += " WHERE " + boost::algorithm::join(constraints, " OR ");
-    }
+  // Take a snapshot of all processes in the system.
+  hProcessSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+  if (hProcessSnap == INVALID_HANDLE_VALUE) {
+    LOG(INFO) << "Failed to obtain Process Snapshot, Error Code: ("
+              << GetLastError() << ")";
+    return results;
   }
 
-  WmiRequest request(query);
-  if (request.getStatus().ok()) {
-    for (const auto& item : request.results()) {
-      long pid = 0;
-      if (item.GetLong("ProcessId", pid).ok()) {
-        genProcess(item, results);
-      }
-    }
+  // Set the size of the structure before using it.
+  pe32.dwSize = sizeof(PROCESSENTRY32);
+
+  // Retrieve information about the first process, and exit if unsuccessful
+  if (!Process32First(hProcessSnap, &pe32)) {
+    LOG(INFO) << "Failed to obtain Process Snapshot, Error Code: ("
+              << GetLastError() << ")";
+    CloseHandle(hProcessSnap);
+    return results;
   }
 
+  // Now walk the snapshot of processes, and display information about each
+  // process in turn
+  do {
+    Row r;
+    win32GenProcess(pe32, r);
+    results.push_back(r);
+  } while (Process32Next(hProcessSnap, &pe32));
+
+  CloseHandle(hProcessSnap);
   return results;
 }
 }

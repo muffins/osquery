@@ -106,7 +106,7 @@ enum SeekMode { PF_SEEK_BEGIN = 0, PF_SEEK_CURRENT, PF_SEEK_END };
 
 #ifdef WIN32
 /// Takes a Windows FILETIME object and returns seconds since epoch
-LONGLONG filetimeToUnixtime(const FILETIME& ft);
+unsigned long long filetimeToUnixtime(const FILETIME& ft);
 
 /**
  * @brief Stores information about the last Windows async request

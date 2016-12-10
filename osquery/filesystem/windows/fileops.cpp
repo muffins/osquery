@@ -1349,13 +1349,17 @@ Status socketExists(const fs::path& path, bool remove_socket) {
   return Status(0, "OK");
 }
 
-LONGLONG filetimeToUnixtime(const FILETIME& ft) {
-  LARGE_INTEGER date, adjust;
-  date.HighPart = ft.dwHighDateTime;
-  date.LowPart = ft.dwLowDateTime;
-  adjust.QuadPart = 11644473600000 * 10000;
-  date.QuadPart -= adjust.QuadPart;
-  return date.QuadPart / 10000000;
+unsigned long long filetimeToUnixtime(const FILETIME& ft)
+{
+  //LARGE_INTEGER date, adjust;
+  //adjust.QuadPart = 11644473600000 * 10000;
+  //date.QuadPart = (date.QuadPart < adjust.QuadPart) ? 0 : date.QuadPart - adjust.QuadPart;
+  //return date.QuadPart / 10000000;
+
+  auto ullSecSinceWinEpoch = (static_cast<unsigned long long>(ft.dwHighDateTime) << 32) & ft.dwLowDateTime;
+  auto winTicks = 10000000;
+  auto epochDelta = 11644473600;
+  return (ullSecSinceWinEpoch / winTicks) - epochDelta;
 }
 
 fs::path getSystemRoot() {
