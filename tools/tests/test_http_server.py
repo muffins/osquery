@@ -185,7 +185,7 @@ class RealSimpleHandler(BaseHTTPRequestHandler):
         self._reply({})
 
     def test_read_requests(self):
-        # call made by unit tests to retrieve the entire history of requests 
+        # call made by unit tests to retrieve the entire history of requests
         # made by code under test. Used by unit tests to verify that the code
         # under test made the expected calls to the TLS backend
         self._reply(RECEIVED_REQUESTS)
@@ -195,14 +195,14 @@ class RealSimpleHandler(BaseHTTPRequestHandler):
         # can retrieve it later for verification purposes
         request['command'] = command
         RECEIVED_REQUESTS.append(request)
-        
+
     def _reply(self, response):
         debug("Replying: %s" % (str(response)))
         self.wfile.write(json.dumps(response))
 
 
 def handler():
-    debug("Shutting down HTTP server via timeout (%d) seconds." 
+    debug("Shutting down HTTP server via timeout (%d) seconds."
           % (ARGS.timeout))
     thread.interrupt_main()
 
@@ -218,7 +218,7 @@ if __name__ == '__main__':
 
     parser.add_argument(
         "--persist", default=False, action="store_true",
-        help="Wrap the HTTP server socket in TLS."
+        help="Prevent the server from timing out."
     )
     parser.add_argument(
         "--timeout", default=10, type=int,
