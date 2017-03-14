@@ -2,7 +2,7 @@ table_name("registry")
 description("All of the Windows registry hives.")
 schema([
     Column("hive", TEXT, "The parent registry hive where the key and value exist"),
-    Column("key", TEXT, "Name of the key to search for"),
+    Column("key", TEXT, "Name of the key to search for", index=True),
     Column("subkey", TEXT, "Name of the subkey for a given HIVE and key"),
     Column("name", TEXT, "Name of the registry value entry"),
     Column("type", TEXT, "Type of data associated with the registry value"),
