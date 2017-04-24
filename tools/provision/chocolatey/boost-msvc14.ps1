@@ -8,10 +8,10 @@
 # For more information -
 # https://studiofreya.com/2016/09/29/how-to-build-boost-1-62-with-visual-studio-2015/
 # Update-able metadata
-$version = '1.63.0'
+$version = '1.64.0'
 $packageName = 'boost-msvc14'
-$projectSource = 'http://www.boost.org/users/history/version_1_63_0.html'
-$packageSourceUrl = 'http://www.boost.org/users/history/version_1_63_0.html'
+$projectSource = 'http://www.boost.org/users/history/version_1_64_0.html'
+$packageSourceUrl = 'http://www.boost.org/users/history/version_1_64_0.html'
 $authors = 'boost-msvc14'
 $owners = 'boost-msvc14'
 $copyright = 'http://www.boost.org/users/license.html'
@@ -54,8 +54,14 @@ $sourceDir = Get-Location
 
 # Build the libraries
 Invoke-BatchFile './bootstrap.bat'
-.\b2.exe -j2 toolset=msvc-14.0 address-model=64 architecture=x86 link=static threading=multi runtime-link=static --build-type=minimal stage --stagedir=stage/x64
-.\b2.exe -j2 toolset=msvc-14.0 address-model=32 architecture=x86 link=static threading=multi runtime-link=static --build-type=minimal stage --stagedir=stage/win32
+.\b2.exe headers
+.\b2.exe -j2 toolset=msvc-14.0 address-model=64 architecture=x86 link=static threading=multi runtime-link=static stage --stagedir=stage/x64 -d2 --layout=tagged --ignore-site-config --disable-icu --with-filesystem --with-regex --with-system --with-thread --with-coroutine2 --with-context threading=multi link=static optimization=space variant=release
+
+.\b2.exe -j2 toolset=msvc-14.0 address-model=64 architecture=x86 link=static threading=multi runtime-link=static stage --stagedir=stage/x64 -d2 --layout=tagged --ignore-site-config --disable-icu --with-filesystem --with-regex --with-system --with-thread --with-coroutine2 --with-context threading=multi link=static optimization=space variant=debug
+
+.\b2.exe -j2 toolset=msvc-14.0 address-model=32 architecture=x86 link=static threading=multi runtime-link=static stage --stagedir=stage/x64 -d2 --layout=tagged --ignore-site-config --disable-icu --with-filesystem --with-regex --with-system --with-thread --with-coroutine2 --with-context threading=multi link=static optimization=space variant=release
+
+.\b2.exe -j2 toolset=msvc-14.0 address-model=32 architecture=x86 link=static threading=multi runtime-link=static stage --stagedir=stage/x64 -d2 --layout=tagged --ignore-site-config --disable-icu --with-filesystem --with-regex --with-system --with-thread --with-coroutine2 --with-context threading=multi link=static optimization=space variant=debug
 
 # Construct the Chocolatey Package
 $chocoDir = New-Item -ItemType Directory -Path 'osquery-choco'
