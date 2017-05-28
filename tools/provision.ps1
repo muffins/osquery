@@ -285,7 +285,7 @@ function Install-ThirdParty {
     "openssl.1.0.2-k",
     "rocksdb.5.1.4-r1",
     "snappy-msvc.1.1.1.8",
-    "thrift-dev.0.10.0-r1",
+    "thrift-dev.0.9.3",
     "cpp-netlib.0.12.0-r3",
     "linenoise-ng.1.0.0-r1",
     "clang-format.3.9.0",
@@ -380,14 +380,14 @@ function Main {
 
   Write-Host "[+] Success!" -foregroundcolor Green
   $out = Install-Chocolatey
-  $out = Install-ChocoPackage 'winflexbison'
+  #$out = Install-ChocoPackage 'winflexbison'
   # Get flex and bison into our path for use
-  $chocoPath = $oldPath = [System.Environment]::GetEnvironmentVariable('ChocolateyInstall', 'Machine')
-  if (Test-Path (Join-Path $chocoPath 'lib\winflexbison\tools\')) {
-    Copy-Item (Join-Path $chocoPath 'lib\winflexbison\tools\win_bison.exe') (Join-Path $chocoPath 'bin\bison.exe')
-    Copy-Item -Recurse (Join-Path $chocoPath 'lib\winflexbison\tools\data') (Join-Path $chocoPath 'bin\data')
-    Copy-Item (Join-Path $chocoPath 'lib\winflexbison\tools\win_flex.exe') (Join-Path $chocoPath 'bin\flex.exe')
-  }
+  #$chocoPath = $oldPath = [System.Environment]::GetEnvironmentVariable('ChocolateyInstall', 'Machine')
+  #if (Test-Path (Join-Path $chocoPath 'lib\winflexbison\tools\')) {
+    #Copy-Item (Join-Path $chocoPath 'lib\winflexbison\tools\win_bison.exe') (Join-Path $chocoPath 'bin\bison.exe')
+    #Copy-Item -Recurse (Join-Path $chocoPath 'lib\winflexbison\tools\data') (Join-Path $chocoPath 'bin\data')
+    #Copy-Item (Join-Path $chocoPath 'lib\winflexbison\tools\win_flex.exe') (Join-Path $chocoPath 'bin\flex.exe')
+  #}
   $out = Install-ChocoPackage 'cppcheck'
   $out = Install-ChocoPackage '7zip.commandline'
   $out = Install-ChocoPackage 'cmake.portable' '3.6.1'
@@ -420,10 +420,10 @@ function Main {
   }
   $out = Install-ThirdParty
   # Lastly, grab the thrift compiler binary and drop it into a folder in our path
-  if (Test-Path (Join-Path $chocoPath 'lib\thrift-dev\bin\')) {
-    Copy-Item (Join-Path $chocoPath 'lib\thrift-dev\bin\thrift.exe') (Join-Path $chocoPath 'bin\thrift.exe')
-    Copy-Item (Join-Path $chocoPath 'lib\thrift-dev\bin\thrift-bootstrap.exe') (Join-Path $chocoPath 'bin\thrift-bootstrap.exe')
-  }
+  #if (Test-Path (Join-Path $chocoPath 'lib\thrift-dev\bin\')) {
+    #Copy-Item (Join-Path $chocoPath 'lib\thrift-dev\bin\thrift.exe') (Join-Path $chocoPath 'bin\thrift.exe')
+    #Copy-Item (Join-Path $chocoPath 'lib\thrift-dev\bin\thrift-bootstrap.exe') (Join-Path $chocoPath 'bin\thrift-bootstrap.exe')
+  #}
   Write-Host "[+] Done." -foregroundcolor Yellow
 }
 

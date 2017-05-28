@@ -10,16 +10,16 @@
 # $version - The version of the software package to build
 # $chocoVersion - The chocolatey package version, used for incremental bumps
 #                 without changing the version of the software package
-$version = '0.9.3'
-$chocoVersion = '0.9.3'
-$packageName = 'thrift-dev'
-$projectSource = 'https://github.com/apache/thrift'
-$packageSourceUrl = 'https://github.com/apache/thrift'
-$authors = 'thrift-dev'
-$owners = 'thrift-dev'
-$copyright = 'https://github.com/apache/thrift/blob/master/LICENSE'
-$license = 'https://github.com/apache/thrift/blob/master/LICENSE'
-$url = "https://github.com/apache/thrift/archive/$version.zip"
+$version = '2.1.8'
+$chocoVersion = '2.1.8'
+$packageName = 'libevent'
+$projectSource = ''
+$packageSourceUrl = ''
+$authors = 'libevent'
+$owners = 'libevent'
+$copyright = ''
+$license = ''
+$url = "https://github.com/libevent/libevent/archive/release-$version-stable.zip"
 
 # Invoke our utilities file
 . "$(Split-Path -Parent $MyInvocation.MyCommand.Definition)\osquery_utils.ps1"
@@ -54,14 +54,14 @@ $sourceDir = "thrift-$version"
 Set-Location $sourceDir
 
 # Set the cmake logic to generate a static build for us
-#Add-Content -NoNewline -Path 'lib\cpp\CMakeLists.txt' -Value "`nset(CMAKE_CXX_FLAGS_RELEASE `"`${CMAKE_CXX_FLAGS_RELEASE} /MT`")`nset(CMAKE_CXX_FLAGS_DEBUG `"`${CMAKE_CXX_FLAGS_DEBUG} /MTd`")"
-#Add-Content -NoNewline -Path 'compiler\cpp\CMakeLists.txt' -Value "`nset(CMAKE_CXX_FLAGS_RELEASE `"`${CMAKE_CXX_FLAGS_RELEASE} /MT`")`nset(CMAKE_CXX_FLAGS_DEBUG `"`${CMAKE_CXX_FLAGS_DEBUG} /MTd`")"
+Add-Content -NoNewline -Path 'lib\cpp\CMakeLists.txt' -Value "`nset(CMAKE_CXX_FLAGS_RELEASE `"`${CMAKE_CXX_FLAGS_RELEASE} /MT`")`nset(CMAKE_CXX_FLAGS_DEBUG `"`${CMAKE_CXX_FLAGS_DEBUG} /MTd`")"
+Add-Content -NoNewline -Path 'compiler\cpp\CMakeLists.txt' -Value "`nset(CMAKE_CXX_FLAGS_RELEASE `"`${CMAKE_CXX_FLAGS_RELEASE} /MT`")`nset(CMAKE_CXX_FLAGS_DEBUG `"`${CMAKE_CXX_FLAGS_DEBUG} /MTd`")"
 
 # Build the libraries
 $buildDir = New-Item -Force -ItemType Directory -Path 'osquery-win-build'
 Set-Location $buildDir
 
-cmake -G 'Visual Studio 14 2015 Win64' -DWITH_SHARED_LIB=OFF -DBUILD_TESTING=OFF -DBUILD_EXAMPLES=OFF -DWITH_ZLIB=ON -DZLIB_INCLUDE_DIR=C:/ProgramData/chocolatey/lib/zlib/local/include -DZLIB_LIBRARY=C:/ProgramData/chocolatey/lib/zlib/local/lib/zlibstatic.lib -DWITH_OPENSSL=ON -DOPENSSL_INCLUDE_DIR=C:/ProgramData/chocolatey/lib/openssl/local/include -DOPENSSL_ROOT_DIR=C:/ProgramData/chocolatey/lib/openssl/local -DBOOST_LIBRARYDIR=C:/ProgramData/chocolatey/lib/boost-msvc14/local/lib -DBOOST_ROOT=C:/ProgramData/chocolatey/lib/boost-msvc14/local/ -DWITH_STDTHREADS=ON -WITH_MT=ON ../
+ cmake -G 'Visual Studio 14 2015 Win64' -DWITH_SHARED_LIB=OFF -DBUILD_TESTING=OFF -DBUILD_EXAMPLES=OFF -DWITH_LIBEVENT=ON -DLIBEVENT_INCLUDE_DIRS=C:\tools\include\libevent -DLIBEVENT_LIBRARIES=C:\tools\lib\libevent -DWITH_ZLIB=ON -DZLIB_INCLUDE_DIR=C:\ProgramData/chocolatey/lib/zlib/local/include -DZLIB_LIBRARY=C:/ProgramData/chocolatey/lib/zlib/local/lib/zlibstatic.lib -DWITH_OPENSSL=ON -DOPENSSL_INCLUDE_DIR=C:/ProgramData/chocolatey/lib/openssl/local/include -DOPENSSL_ROOT_DIR=C:/ProgramData/chocolatey/lib/openssl/local -DBOOST_LIBRARYDIR=C:/ProgramData/chocolatey/lib/boost-msvc14/local/lib64-msvc-14.0 -DBOOST_ROOT=C:/ProgramData/chocolatey/lib/boost-msvc14/local ../
 
 # Build the libraries
 msbuild 'Apache Thrift.sln' /p:Configuration=Release /m /t:thrift_static /v:m
