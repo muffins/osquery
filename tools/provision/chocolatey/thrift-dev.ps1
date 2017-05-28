@@ -10,8 +10,8 @@
 # $version - The version of the software package to build
 # $chocoVersion - The chocolatey package version, used for incremental bumps
 #                 without changing the version of the software package
-$version = '0.10.0'
-$chocoVersion = '0.10.0-r1'
+$version = '0.9.3'
+$chocoVersion = '0.9.3-r1'
 $packageName = 'thrift-dev'
 $projectSource = 'https://github.com/apache/thrift'
 $packageSourceUrl = 'https://github.com/apache/thrift'
