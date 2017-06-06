@@ -23,6 +23,7 @@
 #endif
 #endif
 
+/// Wrap this include with the above and below ignored warnings for FreeBSD.
 #include <boost/coroutine2/coroutine.hpp>
 #include <boost/lexical_cast.hpp>
 

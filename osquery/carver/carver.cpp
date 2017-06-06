@@ -9,8 +9,6 @@
  */
 
 #ifdef WIN32
-#define _WIN32_DCOM
-
 #include <Windows.h>
 #endif
 

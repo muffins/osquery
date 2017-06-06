@@ -17,8 +17,6 @@
 #include <time.h>
 
 #ifdef WIN32
-#define _WIN32_DCOM
-
 #include <WbemIdl.h>
 #include <Windows.h>
 #include <signal.h>

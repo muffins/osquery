@@ -913,7 +913,7 @@ ssize_t PlatformFile::getOverlappedResultForRead(void* buf,
     // NOTE: We do NOT support situations where the second read operation uses a
     // SMALLER buffer than the initial async request. This will cause the
     // smaller amount to be copied and truncate DATA!
-    DWORD size = static_cast<DWORD>(min(requested_size, bytes_read));
+    DWORD size = static_cast<DWORD>(std::min(requested_size, static_cast<size_t>(bytes_read)));
     ::memcpy_s(buf, requested_size, last_read_.buffer_.get(), size);
 
     // Update our cursor

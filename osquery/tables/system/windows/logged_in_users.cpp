@@ -8,8 +8,6 @@
  *  You may select, at your option, one of the above-listed licenses.
  */
 
-#define _WIN32_DCOM
-
 #include <Windows.h>
 #include <Wtsapi32.h>
 #include <winsock2.h>

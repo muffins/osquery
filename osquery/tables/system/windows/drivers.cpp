@@ -8,9 +8,6 @@
  *  You may select, at your option, one of the above-listed licenses.
  */
 
-#include <string>
-
-// clang-format off
 #include <Windows.h>
 #include <SetupAPI.h>
 #include <initguid.h>

@@ -10,8 +10,6 @@
 
 #pragma once
 
-#define _WIN32_DCOM
-
 #include <Windows.h>
 #include <winevt.h>
 

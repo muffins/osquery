@@ -15,12 +15,6 @@
 #include <string>
 #include <vector>
 
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-
-#define _WIN32_DCOM
-
 #include <WbemIdl.h>
 #include <Windows.h>
 

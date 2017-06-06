@@ -8,8 +8,18 @@
  *  You may select, at your option, one of the above-listed licenses.
  */
 
-#include "osquery/core/windows/process_ops.h"
-#include "osquery/core/conversions.h"
+#include <Windows.h>
+// clang-format off
+#include <LM.h>
+// clang-format on
+
+#include <vector>
+
+#include <osquery/system.h>
+#include <osquery/logger.h>
+
+#include "osquery/core/process.h"
+#include "osquery/core/windows/wmi.h"
 
 namespace osquery {
 

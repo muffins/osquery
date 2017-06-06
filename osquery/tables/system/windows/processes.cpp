@@ -11,8 +11,6 @@
 #include <map>
 #include <string>
 
-#define _WIN32_DCOM
-
 #include <Windows.h>
 #include <iomanip>
 #include <psapi.h>

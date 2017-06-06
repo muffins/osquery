@@ -17,9 +17,7 @@
 #include <cstdio>
 
 #ifdef WIN32
-
 #include <windows.h>
-
 #include <io.h>
 #else
 #include <sys/resource.h>

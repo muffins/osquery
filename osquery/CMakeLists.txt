@@ -28,6 +28,28 @@ set(OSQUERY_ADDITIONAL_LINKS "")
 set(OSQUERY_ADDITIONAL_TESTS "")
 set(OSQUERY_TABLES_TESTS "")
 
+if(WINDOWS)
+  # TODO: Find our option for this /guard:cf
+  # TODO: Find the remainder of #defins and bring them here
+  add_definitions(-DTHRIFT_SQUELCH_CONSOLE_OUTPUT=1)
+  add_definitions(-DNOMINMAX)
+  add_definitions(-D_WIN32_DCOM)
+  add_definitions(-DWIN32_LEAN_AND_MEAN)
+  add_definitions(-DBOOST_USE_WINDOWS_H)
+  add_definitions(-DLIBARCHIVE_STATIC)
+  add_definitions(-D_WIN32_WINNT=0x0601)
+  add_definitions(-DBOOST_ALL_NO_LIB)
+  add_definitions(-DBOOST_MSVC=1200)
+
+  add_compile_options(
+    /fallback
+    -fmsc-version=1700
+    -fms-extensions
+    -fms-compatibility
+  )
+  # TODO: Blend the below compile options with those above
+endif()
+
 # Add all and extra for osquery code.
 if(CLANG AND POSIX)
   add_compile_options(

@@ -133,6 +133,7 @@ elseif(WIN32)
   set(OS_WHOLELINK_PRE "-WHOLEARCHIVE:")
   set(OS_WHOLELINK_POST "")
   set(WINDOWS TRUE)
+  set(CXX_COMPILE_FLAGS "${CXX_COMPILE_FLAGS} -std=c++14")
 else()
   set(OS_WHOLELINK_PRE "-Wl,-whole-archive")
   set(OS_WHOLELINK_POST "-Wl,-no-whole-archive")
@@ -148,6 +149,28 @@ else()
   endif()
   set(POSIX TRUE)
 endif()
+
+# TODO: Clean this up with the logic below
+if(WINDOWS)
+  add_compile_options(
+    -Wunused-arguments
+    -Wstrict-aliasing
+    -Wno-missing-field-initializers
+    -Wno-unused-local-typedef
+    -Wno-deprecated-register
+    -Wno-unknown-warning-option
+    -Wnon-virtual-dtor
+    -Wchar-subscripts
+    -Wpointer-arith
+    -Woverloaded-virtual
+    -Wformat
+    -Wformat-security
+    -Werror=format-security
+    -Wabi-tag
+  )
+  set(CXX_STDLIB "-stdlib=libc++")
+endif()
+
 
 # Configure the CXX standard and optionally set the stdlib to LLVM's.
 if(NOT WIN32)
@@ -191,6 +214,7 @@ if(POSIX)
     -Werror=format-security
     -fpermissive
     -fstack-protector-all
+    -pedantic
     -pipe
     -fdata-sections
     -ffunction-sections
@@ -322,7 +346,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 if(NOT DEFINED ENV{OPTIMIZED})
   if(WINDOWS)
     # It is unclear if AVX must be managed on Windows.
-    add_compile_options(/favor:AMD64)
+    #add_compile_options(/favor:AMD64)
   else()
     add_compile_options(-march=x86-64 -mno-avx)
   endif()

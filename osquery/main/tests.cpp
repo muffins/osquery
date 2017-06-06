@@ -9,7 +9,6 @@
  */
 
 #ifdef WIN32
-
 #include <Shlwapi.h>
 #include <Windows.h>
 #endif

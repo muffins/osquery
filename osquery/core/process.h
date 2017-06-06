@@ -18,12 +18,7 @@
 #include <boost/noncopyable.hpp>
 #include <boost/optional.hpp>
 
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-
 #ifdef WIN32
-
 #include <windows.h>
 
 // Suppressing unexpected token following preprocessor directive warning
