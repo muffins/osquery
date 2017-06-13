@@ -229,12 +229,15 @@ Status Carver::compress(const std::set<boost::filesystem::path>& paths) {
     // archive_entry_set_ctime();
     // archive_entry_set_mtime();
     archive_write_header(arch, entry);
+    auto blkCount =
+        static_cast<size_t>(ceil(static_cast<double>(pFile.size()) /
+                                 static_cast<double>(FLAGS_carver_block_size)));
+    for(size_t i = 0; i < blkCount; i++) {
+      std::vector<char> block(FLAGS_carver_block_size, 0);
+      auto r = pFile.read(block.data(), FLAGS_carver_block_size);
+      archive_write_data(arch, block.data(), block.size());
+    }
 
-    // TODO: Chunking or a max file size.
-    std::ifstream in(f.string(), std::ios::binary);
-    std::stringstream buffer;
-    buffer << in.rdbuf();
-    archive_write_data(arch, buffer.str().c_str(), buffer.str().size());
     in.close();
     archive_entry_free(entry);
   }
