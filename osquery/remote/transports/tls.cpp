@@ -61,6 +61,8 @@ CLI_FLAG(uint32,
          3600,
          "TLS session keep alive timeout in seconds");
 
+CLI_FLAG(string, splunk_logger_token, "", "HTTP Event Collector Token for Splunk");
+
 #if defined(DEBUG)
 HIDDEN_FLAG(bool,
             tls_allow_unsafe,
@@ -90,6 +92,9 @@ void TLSTransport::decorateRequest(http::Request& r) {
   r << http::Request::Header("Content-Type", serializer_->getContentType());
   r << http::Request::Header("Accept", serializer_->getContentType());
   r << http::Request::Header("User-Agent", kTLSUserAgentBase + kVersion);
+  if(!FLAGS_splunk_logger_token.empty()){
+    r << boost::network::header("Authorization", "Splunk " + FLAGS_splunk_logger_token);
+  }
 }
 
 http::Client::Options TLSTransport::getOptions() {
