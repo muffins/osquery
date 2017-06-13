@@ -63,6 +63,12 @@ CLI_FLAG(uint32,
          8192,
          "Size of blocks used for POSTing data back to remote endpoints");
 
+/// Size of blocks used for POSTing data back to remote endpoints
+CLI_FLAG(uint32,
+        carver_max_block_retries,
+        3,
+        "Maximum number of times to attempt POSTing a block before giving up");
+
 CLI_FLAG(bool,
          disable_carver,
          true,
@@ -225,6 +231,7 @@ Status Carver::compress(const std::set<boost::filesystem::path>& paths) {
     archive_entry_set_size(entry, pFile.size());
     archive_entry_set_filetype(entry, AE_IFREG);
     archive_entry_set_perm(entry, 0644);
+    // TODO: Create a manifest to keep track of carved file metadata
     // archive_entry_set_atime();
     // archive_entry_set_ctime();
     // archive_entry_set_mtime();
@@ -235,10 +242,13 @@ Status Carver::compress(const std::set<boost::filesystem::path>& paths) {
     for(size_t i = 0; i < blkCount; i++) {
       std::vector<char> block(FLAGS_carver_block_size, 0);
       auto r = pFile.read(block.data(), FLAGS_carver_block_size);
+      if (r != FLAGS_carver_block_size && r > 0) {
+        // resize the buffer to size we read as last block read is small
+        block.resize(r);
+      }
       archive_write_data(arch, block.data(), block.size());
     }
 
-    in.close();
     archive_entry_free(entry);
   }
   archive_write_free(arch);
@@ -288,32 +298,60 @@ Status Carver::postCarve(const boost::filesystem::path& path) {
   }
 
   auto contRequest = Request<TLSTransport, JSONSerializer>(contUri_);
-  for (size_t i = 0; i < blkCount; i++) {
-    std::vector<char> block(FLAGS_carver_block_size, 0);
-    auto r = pFile.read(block.data(), FLAGS_carver_block_size);
-
-    if (r != FLAGS_carver_block_size && r > 0) {
-      // resize the buffer to size we read as last block is likely smaller
-      block.resize(r);
-    }
-
-    pt::ptree params;
-    params.put<size_t>("block_id", i);
-    params.put<std::string>("session_id", session_id);
-    params.put<std::string>("request_id", requestId_);
-    params.put<std::string>(
-        "data", base64Encode(std::string(block.begin(), block.end())));
-
-    // TODO: Error sending files.
-    status = contRequest.call(params);
-    if (!status.ok()) {
-      VLOG(1) << "Post of carved block " << i
-              << " failed: " << status.getMessage();
-      continue;
-    }
+  std::map<int, bool> carveBlockStatus;
+  for(size_t i = 0; i < blkCount; i++){
+    carveBlockStatus[i] = false;
   }
 
-  updateCarveValue(carveGuid_, "status", "SUCCESS");
+  // Helper function to determine if we're done submitting or not
+  auto getRemainingCarves = [&carveBlockStatus](){
+    std::set<int> remainingCarves;
+    for(const auto& kv : carveBlockStatus){
+      if(!kv.second){
+        remainingCarves.insert(kv.first);
+      }
+    }
+    return remainingCarves;
+  };
+
+  // Repeat attempts to POST a block up to carver_max_block_retries times
+  for(size_t j = 0; j < FLAGS_carver_max_block_retries; j++) {
+    for(const auto& i : getRemainingCarves()){
+      std::vector<char> block(FLAGS_carver_block_size, 0);
+
+      pFile.seek(i * FLAGS_carver_block_size, PF_SEEK_BEGIN);
+      auto r = pFile.read(block.data(), FLAGS_carver_block_size);
+      if (r != FLAGS_carver_block_size && r > 0) {
+        // resize the buffer to size we read as last block is likely smaller
+        block.resize(r);
+      }
+
+      pt::ptree params;
+      params.put<size_t>("block_id", i);
+      params.put<std::string>("session_id", session_id);
+      params.put<std::string>("request_id", requestId_);
+      params.put<std::string>(
+          "data", base64Encode(std::string(block.begin(), block.end())));
+
+      status = contRequest.call(params);
+      if (!status.ok()) {
+        // If the POST fails, log this and pause to give the endpoint a chance
+        // to recover
+        VLOG(1) << "Post of carved block " << i
+                << " failed " << j << " times: " << status.getMessage();
+        pauseMilli(100);
+      } else {
+        // Mark the block as being successfully POSTed
+        carveBlockStatus[i] = true;
+      }
+    }
+  }
+  auto remainingBlocks = getRemainingCarves();
+  if(remainingBlocks.size() == 0){
+    updateCarveValue(carveGuid_, "status", "SUCCESS");
+  } else {
+    updateCarveValue(carveGuid_, "status", "FAILED");
+  }
   return Status(0, "Ok");
 };
 
