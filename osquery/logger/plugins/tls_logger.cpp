@@ -117,6 +117,11 @@ Status TLSLogForwarder::send(std::vector<std::string>& log_data,
   if (FLAGS_logger_tls_compress) {
     params.add("_compress", true);
   }
-  return TLSRequestHelper::go<JSONSerializer>(uri_, params, response);
+
+
+  //return TLSRequestHelper::go<JSONSerializer>(uri_, params, response);
+  pt::ptree splunk_params;
+  splunk_params.add_child("event", params);
+  return TLSRequestHelper::go<JSONSerializer>(uri_, splunk_params, response);
 }
 }
