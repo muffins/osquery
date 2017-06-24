@@ -134,6 +134,7 @@ enum class ToolType {
   DAEMON,
   TEST,
   EXTENSION,
+  SHELL_DAEMON,
 };
 
 /**

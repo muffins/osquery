@@ -321,7 +321,7 @@ void setVerboseLevel() {
     // Do NOT log INFO, WARNING, ERROR to stderr.
     // Do log only WARNING, ERROR to log sinks.
     auto default_level = google::GLOG_INFO;
-    if (kToolType == ToolType::SHELL) {
+    if (Initializer::isShell()) {
       default_level = google::GLOG_WARNING;
     }
 
@@ -462,7 +462,7 @@ void BufferedLogSink::send(google::LogSeverity severity,
   }
 
   // The daemon will relay according to the schedule.
-  if (enabled_ && kToolType != ToolType::DAEMON) {
+  if (enabled_ && !Initializer::isDaemon()) {
     relayStatusLogs(FLAGS_logger_status_sync);
   }
 }
