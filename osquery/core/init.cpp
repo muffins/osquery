@@ -190,6 +190,7 @@ DECLARE_bool(disable_database);
 DECLARE_bool(disable_events);
 
 CLI_FLAG(bool, S, false, "Run as a shell process");
+CLI_FLAG(bool, D, false, "Run as a daemon process");
 CLI_FLAG(bool, daemonize, false, "Attempt to daemonize (POSIX only)");
 
 FLAG(bool, ephemeral, false, "Skip pidfile and database state checks");
@@ -248,7 +249,8 @@ Initializer::Initializer(int& argc, char**& argv, ToolType tool)
 
   // osquery can function as the daemon or shell depending on argv[0].
   if (tool == ToolType::SHELL_DAEMON) {
-    if (boost::filesystem::path(argv[0]).filename() == "osqueryd") {
+    if (fs::path(argv[0]).filename().string().find("osqueryd") !=
+        std::string::npos) {
       kToolType = ToolType::DAEMON;
       binary_ = "osqueryd";
     } else {
@@ -288,9 +290,12 @@ Initializer::Initializer(int& argc, char**& argv, ToolType tool)
   bool default_flags = true;
   for (int i = 1; i < *argc_; i++) {
     auto help = std::string((*argv_)[i]);
-    if (help == "-s" || help == "--s" || help == "--shell") {
+    if (help == "-S" || help == "--S") {
       kToolType = ToolType::SHELL;
       binary_ = "osqueryi";
+    } else if (help == "-D" || help == "--D") {
+      kToolType = ToolType::DAEMON;
+      binary_ = "osqueryd";
     } else if ((help == "--help" || help == "-help" || help == "--h" ||
                 help == "-h") &&
                tool != ToolType::TEST) {
