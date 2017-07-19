@@ -1,0 +1,136 @@
+<?xml version='1.0' encoding='windows-1252'?>
+
+<?define OsqueryVersion = '2.5.3'?>
+<?define OsqueryUpgradeCode = 'ea6c7327-461e-4033-847c-acdf2b85dede'?>
+
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi" xmlns:util="http://schemas.microsoft.com/wix/UtilExtension">
+  <Product
+    Name='osquery'
+    Manufacturer='Facebook'
+    Id='44363808-f75e-471b-95bb-bacb1c404c5e'
+    UpgradeCode='$(var.OsqueryUpgradeCode)'
+    Language='1033'
+    Codepage='1252'
+    Version='$(var.OsqueryVersion)'>
+
+    <Package Id='*'
+      Keywords='Installer'
+      Description='osquery standalone installer'
+      Comments='Facebooks Opensource Host-based Intrusion Detection Agent'
+      Manufacturer='Facebook'
+      InstallerVersion='100'
+      Languages='1033'
+      Compressed='yes'
+      SummaryCodepage='1252' />
+
+    <MediaTemplate EmbedCab="yes" />
+
+    <Upgrade Id='$(var.OsqueryUpgradeCode)'>
+       <UpgradeVersion Minimum='$(var.OsqueryVersion)'
+                       OnlyDetect='yes'
+                       Property='NEWERVERSIONDETECTED'/>
+    </Upgrade>
+
+    <Condition Message='A newer version of osquery is already installed.'>
+      NOT NEWERVERSIONDETECTED
+    </Condition>
+
+    <Condition Message="You need to be an administrator to install this product.">
+        Privileged
+    </Condition>
+
+    <Property Id='SOURCEDIRECTORY' Value='packs'/>
+
+    <Directory Id='TARGETDIR' Name='SourceDir'>
+      <Directory Id='CommonAppDataFolder'>
+        <Directory Id='INSTALLFOLDER' Name='osquery'>
+          <Directory Id='DaemonFolder' Name='osqueryd'>
+            <Component Id='osqueryd'
+                Guid='41c9910d-bded-45dc-8f82-3cd00a24fa2f'>
+              <CreateFolder>
+                  <Permission User="NT AUTHORITY\SYSTEM" GenericAll="yes"/>
+                  <Permission User="Administrators" GenericAll="yes"/>
+                  <Permission User="Users" GenericRead="yes" GenericExecute="yes"/>
+                  <Permission User="Everyone" GenericRead="yes" GenericExecute="yes"/>
+              </CreateFolder>
+              <File Id='osqueryd'
+                Name='osqueryd.exe'
+                Source='osqueryd.exe'
+                KeyPath='yes'/>
+              <ServiceInstall Id='osqueryd'
+                Name='osqueryd'
+                Account='NT AUTHORITY\SYSTEM'
+                Arguments='--flagfile=C:\ProgramData\osquery\osquery.flags'
+                Start='auto'
+                Type='ownProcess'
+                Vital='yes'
+                ErrorControl='critical'/>
+              <ServiceControl Id='osqueryd'
+                Name='osqueryd'
+                Stop='both'
+                Start='install'
+                Remove='uninstall'
+                Wait='no'/>
+            </Component>
+          </Directory>
+          <Directory Id='LogFolder' Name='log'/>
+          <Component Id='osqueryi' Guid='6a49524e-52b0-4e99-876f-ec50c0082a04'>
+            <File Id='osqueryi'
+              Name='osqueryi.exe'
+              Source='osqueryi.exe'
+              KeyPath='yes'/>
+          </Component>
+          <Component Id='extras' Guid='3f435561-8fe7-4725-975a-95930c44d063'>
+            <File Id='osquery.conf'
+              Name='osquery.conf'
+              Source='osquery.conf'
+              KeyPath='yes'/>
+            <File Id='osquery.flags'
+              Name='osquery.flags'
+              Source='osquery.flags'/>
+            <File Id='osquery_utils.ps1'
+              Name='osquery_utils.ps1'
+              Source='osquery_utils.ps1'/>
+            <File Id='postinstall'
+              Name='post-install.bat'
+              Source='post-install.bat'/>
+            <CopyFile Id='packs'
+              SourceProperty='packs'
+              DestinationDirectory='INSTALLFOLDER'/>
+          </Component>
+          <Directory Id="FileSystemLogging" Name="log"/>
+        </Directory>
+      </Directory>
+    </Directory>
+
+    <Component Id='CreateFileSystemLogging'
+               Directory='FileSystemLogging'
+               Guid='bda18e0c-d356-441d-a264-d3e2c1718979'>
+      <CreateFolder/>
+    </Component>
+
+    <Feature Id='Complete' Level='1'>
+      <ComponentRef Id='osqueryd'/>
+      <ComponentRef Id='osqueryi'/>
+      <ComponentRef Id='extras'/>
+      <ComponentRef Id='CreateFileSystemLogging'/>
+    </Feature>
+
+    <CustomAction Id="PostInstallScript"
+                  ExeCommand="[INSTALLFOLDER]post-install.bat"
+                  Directory="INSTALLFOLDER"
+                  Execute="commit"
+                  Return="asyncNoWait"/>
+
+    <CustomAction Id="PreUninstallScript"
+                  ExeCommand="cmd.exe /c &quot;[INSTALLFOLDER]pre-uninstall.bat&quot;"
+                  Directory="INSTALLFOLDER"
+                  Execute="commit"
+                  Return="asyncNoWait"/>
+
+    <InstallExecuteSequence>
+      <Custom Action="PostInstallScript" After="InstallFiles" >NOT Installed</Custom>
+    </InstallExecuteSequence>
+
+  </Product>
+</Wix>
