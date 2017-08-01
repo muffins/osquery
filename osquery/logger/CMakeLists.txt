@@ -41,7 +41,7 @@ set(OSQUERY_LOGGER_PLUGIN_TESTS
 # and others, which use a Glog sink. They must be tested in tandem.
 ADD_OSQUERY_TEST_ADDITIONAL(${OSQUERY_LOGGER_PLUGIN_TESTS})
 
-if(NOT SKIP_AWS AND NOT WINDOWS)
+if(NOT SKIP_AWS)
   set(OSQUERY_LOGGER_AWS_PLUGINS
     "plugins/aws_firehose.cpp"
     "plugins/aws_kinesis.cpp"
