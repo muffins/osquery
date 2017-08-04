@@ -16,6 +16,7 @@
 #include <Windows.h>
 #include <psapi.h>
 #include <stdlib.h>
+#include <tlhelp32.h>
 
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/trim.hpp>
@@ -28,119 +29,174 @@
 
 #include "osquery/core/conversions.h"
 #include "osquery/core/windows/wmi.h"
+#include <osquery/filesystem/fileops.h>
 
 namespace osquery {
 int getUidFromSid(PSID sid);
 int getGidFromSid(PSID sid);
 namespace tables {
 
-void genProcess(const WmiResultItem& result, QueryData& results_data) {
-  Row r;
-  Status s;
-  long pid;
-  long lPlaceHolder;
-  std::string sPlaceHolder;
-
-  /// Store current process pid for more efficient API use.
-  auto currentPid = GetCurrentProcessId();
-
-  s = result.GetLong("ProcessId", pid);
-  r["pid"] = s.ok() ? BIGINT(pid) : BIGINT(-1);
-
-  long uid = -1;
-  long gid = -1;
-  HANDLE hProcess = nullptr;
-  if (pid == currentPid) {
-    hProcess = GetCurrentProcess();
-  } else {
-    hProcess =
-        OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, false, pid);
+/// Enumerate the details for all processes running on a system
+Status enumerateProcesses(QueryData& results) {
+  
+  auto procSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+  if(procSnap == INVALID_HANDLE_VALUE) {
+    return Status(1, "Failed to open process snapshot");
   }
 
-  if (GetLastError() == ERROR_ACCESS_DENIED) {
-    uid = 0;
-    gid = 0;
+  PROCESSENTRY32 procEntry;
+  procEntry.dwSize = sizeof(PROCESSENTRY32);
+
+  auto ret = Process32First(procSnap, &procEntry);
+
+  if(ret == FALSE) {
+    CloseHandle(procSnap);
+    return Status(1, "Failed to open first process");
   }
 
-  result.GetString("Name", r["name"]);
-  result.GetString("ExecutablePath", r["path"]);
-  result.GetString("CommandLine", r["cmdline"]);
-  result.GetString("ExecutionState", r["state"]);
-  result.GetLong("ParentProcessId", lPlaceHolder);
-  r["parent"] = BIGINT(lPlaceHolder);
-  result.GetLong("Priority", lPlaceHolder);
-  r["nice"] = INTEGER(lPlaceHolder);
-  r["on_disk"] = osquery::pathExists(r["path"]).toString();
+  while(ret != FALSE) {
+    Row r;
+    r["pid"] = BIGINT(procEntry.th32ProcessID);
+    r["name"] = SQL_TEXT(procEntry.szExeFile);
+    r["parent"] = BIGINT(procEntry.th32ParentProcessID);
+    r["nice"] = INTEGER(procEntry.pcPriClassBase);
+    r["threads"] = INTEGER(procEntry.cntThreads);
+    
+    // TODO:
+    r["cwd"] = "";
+    r["state"] = "";
+    r["root"] = "";
+    r["pgroup"] = BIGINT(-1);
 
-  std::vector<char> fileName(MAX_PATH);
-  fileName.assign(MAX_PATH + 1, '\0');
-  if (pid == currentPid) {
-    GetModuleFileName(nullptr, fileName.data(), MAX_PATH);
-  } else {
-    GetModuleFileNameEx(hProcess, nullptr, fileName.data(), MAX_PATH);
-  }
-  r["cwd"] = SQL_TEXT(fileName.data());
-  r["root"] = r["cwd"];
-
-  r["pgroup"] = "-1";
-  r["euid"] = "-1";
-  r["suid"] = "-1";
-  r["egid"] = "-1";
-  r["sgid"] = "-1";
-  r["start_time"] = "0";
-
-  result.GetString("UserModeTime", sPlaceHolder);
-  long long llHolder;
-  osquery::safeStrtoll(sPlaceHolder, 10, llHolder);
-  r["user_time"] = BIGINT(llHolder / 10000000);
-  result.GetString("KernelModeTime", sPlaceHolder);
-  osquery::safeStrtoll(sPlaceHolder, 10, llHolder);
-  r["system_time"] = BIGINT(llHolder / 10000000);
-  result.GetString("PrivatePageCount", sPlaceHolder);
-  r["wired_size"] = BIGINT(sPlaceHolder);
-  result.GetString("WorkingSetSize", sPlaceHolder);
-  r["resident_size"] = sPlaceHolder;
-  result.GetString("VirtualSize", sPlaceHolder);
-  r["total_size"] = BIGINT(sPlaceHolder);
-
-  /// Get the process UID and GID from its SID
-  HANDLE tok = nullptr;
-  std::vector<char> tokOwner(sizeof(TOKEN_OWNER), 0x0);
-  auto ret = OpenProcessToken(hProcess, TOKEN_READ, &tok);
-  if (ret != 0 && tok != nullptr) {
-    unsigned long tokOwnerBuffLen;
-    ret = GetTokenInformation(tok, TokenOwner, nullptr, 0, &tokOwnerBuffLen);
-    if (ret == 0 && GetLastError() == ERROR_INSUFFICIENT_BUFFER) {
-      tokOwner.resize(tokOwnerBuffLen);
-      ret = GetTokenInformation(
-          tok, TokenOwner, tokOwner.data(), tokOwnerBuffLen, &tokOwnerBuffLen);
+    auto proc = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, procEntry.th32ProcessID);
+    
+    // The process is privileged, and we cannot open it for reading
+    if(proc == nullptr) {
+      r["uid"] = BIGINT(-1);
+      r["gid"] = BIGINT(-1);
+      r["euid"] = BIGINT(-1);
+      r["egid"] = BIGINT(-1);
+      r["suid"] = BIGINT(-1);
+      r["sgid"] = BIGINT(-1);
+      r["on_disk"] = INTEGER(-1);
+      r["user_time"] = BIGINT(-1);
+      r["system_time"] = BIGINT(-1);
+      r["start_time"] = BIGINT(-1);
+      r["wired_size"] = BIGINT(-1);
+      r["resident_size"] = BIGINT(-1);
+      r["total_size"] = BIGINT(-1);
+      results.push_back(r);
+      ret = Process32Next(procSnap, &procEntry);
+      continue;
     }
-  }
-  if (uid != 0 && ret != 0 && !tokOwner.empty()) {
-    auto sid = PTOKEN_OWNER(tokOwner.data())->Owner;
-    r["uid"] = INTEGER(getUidFromSid(sid));
-    r["gid"] = INTEGER(getGidFromSid(sid));
-  } else {
-    r["uid"] = INTEGER(uid);
-    r["gid"] = INTEGER(gid);
-  }
 
-  if (hProcess != nullptr) {
-    CloseHandle(hProcess);
-  }
-  if (tok != nullptr) {
+    std::vector<char> exeName(MAX_PATH, 0);
+    unsigned long exeNameLen = MAX_PATH;
+    auto procRet = QueryFullProcessImageName(proc, 0, exeName.data(), &exeNameLen);
+    if(procRet == FALSE) {
+      VLOG(1) << "Failed to get Full process image name with " << GetLastError();
+      r["path"] = "";
+    } else {
+      r["path"] = exeName.data();
+    }
+    r["on_disk"] = INTEGER(osquery::pathExists(r["path"]).getCode());
+
+    PROCESS_MEMORY_COUNTERS_EX pmc;
+    procRet = GetProcessMemoryInfo(proc, reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&pmc), sizeof(pmc));
+    if(procRet == FALSE) {
+      r["wired_size"] = BIGINT(-1);
+      r["resident_size"] = BIGINT(-1);
+    } else {
+      r["wired_size"] = BIGINT(pmc.PrivateUsage);
+      r["resident_size"] = BIGINT(pmc.WorkingSetSize);
+    }
+
+    FILETIME createTime;
+    FILETIME exitTime;
+    FILETIME kernelTime;
+    FILETIME userTime;
+    procRet = GetProcessTimes(proc, &createTime, &exitTime, &kernelTime, &userTime);
+    if(procRet == FALSE) {
+      r["user_time"] = BIGINT(-1);
+      r["system_time"] = BIGINT(-1);
+      r["start_time"] = BIGINT(-1);
+    } else {
+      // Windows stores proc times in 100 nanosecond ticks
+      ULARGE_INTEGER utime;
+      utime.HighPart = userTime.dwHighDateTime;
+      utime.LowPart = userTime.dwLowDateTime;
+      r["user_time"] = BIGINT(utime.QuadPart / 10000000);
+      utime.HighPart = kernelTime.dwHighDateTime;
+      utime.LowPart = kernelTime.dwLowDateTime;
+      r["system_time"] = BIGINT(utime.QuadPart / 10000000);
+      r["start_time"] = BIGINT(osquery::filetimeToUnixtime(createTime));
+    }
+
+    HANDLE tok;
+    auto userProcessed = false;
+    procRet = OpenProcessToken(proc, TOKEN_READ, &tok);
+    if(procRet != FALSE) {
+      std::vector<char> tokBuff;
+      unsigned long tokBuffSize = 0;
+      procRet = GetTokenInformation(tok, TokenUser, nullptr, 0, &tokBuffSize);
+      if(procRet != FALSE || GetLastError() == ERROR_INSUFFICIENT_BUFFER) {
+        tokBuff.resize(tokBuffSize, 0);
+        procRet = GetTokenInformation(tok, TokenUser, tokBuff.data(), tokBuffSize, &tokBuffSize);
+        auto tokUser = PTOKEN_USER(tokBuff.data());
+        r["uid"] = BIGINT(osquery::getUidFromSid(tokUser->User.Sid));
+        r["gid"] = BIGINT(osquery::getGidFromSid(tokUser->User.Sid));
+
+        // TODO: Parse out any privileges the token might have
+        r["euid"] = BIGINT(-1);
+        r["egid"] = BIGINT(-1);
+        r["suid"] = BIGINT(-1);
+        r["sgid"] = BIGINT(-1);
+        userProcessed = true;
+      } else {
+        VLOG(1) << "GetTokenInformation failed with (" << GetLastError() << ")";
+      }
+    } 
+
+    // Failing to opent he process token likely means we do not have access
+    if (!userProcessed) {
+      r["uid"] = BIGINT(-1);
+      r["gid"] = BIGINT(-1);
+      r["euid"] = BIGINT(-1);
+      r["egid"] = BIGINT(-1);
+      r["suid"] = BIGINT(-1);
+      r["sgid"] = BIGINT(-1);
+    }
     CloseHandle(tok);
-    tok = nullptr;
+
+    // Grab whatever values we weren't able to query from WMI
+    auto query = "select CommandLine, VirtualSize from Win32_Process where Handle = " + r["pid"];
+    WmiRequest request(query);
+    if (request.getStatus().ok()) {
+      for(const auto& item : request.results()) {
+        item.GetString("CommandLine", r["cmd_line"]);
+        unsigned long virtSize = 0;
+        item.GetUnsignedLong("VirtualSize", virtSize);
+        r["total_size"] = BIGINT(virtSize);
+      }
+    } else {
+      r["cmd_line"] = "";
+      r["total_size"] = BIGINT(-1);
+    }
+
+    results.push_back(r);
+    CloseHandle(proc);
+    ret = Process32Next(procSnap, &procEntry);
   }
-  results_data.push_back(r);
+  CloseHandle(procSnap);
+  return Status();
 }
 
 QueryData genProcesses(QueryContext& context) {
   QueryData results;
 
+  /*
   std::string query = "SELECT * FROM Win32_Process";
-
-  std::set<long> pidlist;
+  std::set<unsigned long> pidlist;
   if (context.constraints.count("pid") > 0 &&
       context.constraints.at("pid").exists(EQUALS)) {
     for (const auto& pid : context.constraints.at("pid").getAll<int>(EQUALS)) {
@@ -153,25 +209,10 @@ QueryData genProcesses(QueryContext& context) {
       return results;
     }
   }
-
-  if (pidlist.size() > 0) {
-    std::vector<std::string> constraints;
-    for (const auto& pid : pidlist) {
-      constraints.push_back("ProcessId=" + std::to_string(pid));
-    }
-    if (constraints.size() > 0) {
-      query += " WHERE " + boost::algorithm::join(constraints, " OR ");
-    }
-  }
-
-  WmiRequest request(query);
-  if (request.getStatus().ok()) {
-    for (const auto& item : request.results()) {
-      long pid = 0;
-      if (item.GetLong("ProcessId", pid).ok()) {
-        genProcess(item, results);
-      }
-    }
+  */
+  auto s = enumerateProcesses(results);
+  if(!s.ok()) {
+    VLOG(1) << s.getMessage();
   }
 
   return results;
