@@ -16,6 +16,7 @@
 #include <Windows.h>
 #include <psapi.h>
 #include <stdlib.h>
+#include <TlHelp32.h>
 
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/trim.hpp>
@@ -34,6 +35,67 @@ int getUidFromSid(PSID sid);
 int getGidFromSid(PSID sid);
 namespace tables {
 
+/// Enumerate all of the DLLs loaded by processes running on the system
+Status genProcessDlls(QueryData& results) {
+
+  auto procSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+  if (procSnap == INVALID_HANDLE_VALUE) {
+    return Status(1, "Failed to open process snapshot");
+  }
+
+  PROCESSENTRY32 procEntry;
+  procEntry.dwSize = sizeof(PROCESSENTRY32);
+
+  auto procRet = Process32First(procSnap, &procEntry);
+  if (procRet == FALSE) {
+    CloseHandle(procSnap);
+    return Status(1, "Failed to open first process");
+  }
+
+  while (procRet != FALSE) {
+    
+    auto modSnap = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, procEntry.th32ProcessID);
+    // We failed to enumerate the modules for a process
+    if(modSnap == INVALID_HANDLE_VALUE) {
+      procRet = Process32Next(procSnap, &procEntry);
+      continue;
+    }
+
+    MODULEENTRY32 modEntry;
+    modEntry.dwSize = sizeof(MODULEENTRY32);
+    auto modRet = Module32First(modSnap, &modEntry);
+    while(modRet != FALSE) {
+      Row r;
+
+      r["pid"] = INTEGER(procEntry.th32ProcessID);
+      r["path"] = modEntry.szExePath;
+      std::stringstream modStart;
+      modStart << std::hex << &modEntry.modBaseAddr;
+      r["start"] = modStart.str();
+      std::stringstream modEnd;
+      modEnd << std::hex << (&modEntry.modBaseAddr + modEntry.modBaseSize);
+      r["end"] = modEnd.str();
+      r["name"] = modEntry.szModule;
+
+      // TODO:
+      r["permissions"] = "";
+      r["offset"] = "";
+      r["device"] = "";
+      r["inode"] = "";
+      r["psuedo"] = "";
+
+      results.push_back(r);
+      modRet = Module32Next(modSnap, &modEntry);
+    }
+    CloseHandle(modSnap);
+
+    procRet = Process32Next(procSnap, &procEntry);
+  }
+  CloseHandle(procSnap);
+  return Status();
+}
+
+/// Enumerate all processes on the system
 void genProcess(const WmiResultItem& result, QueryData& results_data) {
   Row r;
   Status s;
@@ -176,5 +238,14 @@ QueryData genProcesses(QueryContext& context) {
 
   return results;
 }
+
+QueryData genProcessLoadedDlls(QueryContext& context) {
+  QueryData results;
+
+  genProcessDlls(results);
+
+  return results;
+}
+
 } // namespace tables
 } // namespace osquery
