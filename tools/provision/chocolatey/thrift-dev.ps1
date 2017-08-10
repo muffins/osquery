@@ -21,8 +21,8 @@ $copyright = 'https://github.com/apache/thrift/blob/master/LICENSE'
 $license = 'https://github.com/apache/thrift/blob/master/LICENSE'
 $url = "https://github.com/apache/thrift/archive/$version.zip"
 $parentPath = $(Split-Path -Parent $MyInvocation.MyCommand.Definition)
-$patchfiles = @(
-  Join-Path $parentPath "patches/thrift-dev.patch"
+$patchFiles = @(
+  Join-Path $parentPath "patches/thrift-dev"
 )
 
 # Invoke our utilities file
@@ -33,6 +33,9 @@ Invoke-BatchFile "$env:VS140COMNTOOLS\..\..\vc\vcvarsall.bat" amd64
 
 # Time our execution
 $sw = [System.Diagnostics.StopWatch]::startnew()
+
+# Keep track of our location to restore it later.
+$workingDir = Get-Location
 
 # Keep the location of build script, to bring with in the chocolatey package
 $buildScript = $MyInvocation.MyCommand.Definition
@@ -63,11 +66,24 @@ if (-not (Test-Path $sourceDir)) {
 }
 Set-Location $sourceDir
 
+# Patches are applied in this section before build
+$git = (Get-Command 'git').source
+Start-OsqueryProcess $git 'init'
+foreach ($patch in $patchFiles) {
+  $patchArgs = @(
+    'apply',
+    '--ignore-space-change',
+    '--ignore-whitespace',
+    '--whitespace=nowarn',
+    $patch
+  )
+  Start-OsqueryProcess $git $patchArgs
+}
+
 # Build the libraries
 $buildDir = New-Item -Force -ItemType Directory -Path 'osquery-win-build'
 Set-Location $buildDir
 
-# Patches are applied in this section before build
 # Windows TPipe implementations are _very_ noisy, so we squelch the output
 Add-Content `
   -NoNewline `
@@ -173,15 +189,15 @@ Copy-Item -Recurse "$buildDir\..\lib\cpp\src\thrift" $includeDir
 Copy-Item $buildScript $srcDir
 choco pack
 
+# Restore our previous working directory
+$nupkgOut = Join-Path $(Get-Location) "$packageName.$chocoVersion.nupkg"
+Set-Location $workingDir
+
 Write-Host "[*] Build took $($sw.ElapsedMilliseconds) ms" `
   -ForegroundColor DarkGreen
-if (Test-Path "$packageName.$chocoVersion.nupkg") {
-  Write-Host `
-    "[+] Finished building $packageName v$chocoVersion." `
-    -ForegroundColor Green
-}
-else {
-  Write-Host `
-    "[-] Failed to build $packageName v$chocoVersion." `
-    -ForegroundColor Red
+if (Test-Path $nupkgOut) {
+  Write-Host "[+] Finished building $packageName. Package written to $nupkgOut"`
+             -ForegroundColor Green
+} else {
+  Write-Host "[-] Failed to build $packageName." -ForegroundColor Red
 }

@@ -1,0 +1,27 @@
+From 12cb6d47a515ff7d5987ee938d1654b3e0cb4106 Mon Sep 17 00:00:00 2001
+From: Nick Anderson <thor@fb.com>
+Date: Fri, 11 Aug 2017 10:29:12 -0700
+Subject: [PATCH] Squelching error messages for osquery extensions
+
+---
+ lib/cpp/src/thrift/TOutput.cpp | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/lib/cpp/src/thrift/TOutput.cpp b/lib/cpp/src/thrift/TOutput.cpp
+index 5739d0ff..801f6025 100644
+--- a/lib/cpp/src/thrift/TOutput.cpp
++++ b/lib/cpp/src/thrift/TOutput.cpp
+@@ -94,8 +94,10 @@ void TOutput::errorTimeWrapper(const char* msg) {
+ }
+ 
+ void TOutput::perror(const char* message, int errno_copy) {
++#ifndef THRIFT_SQUELCH_CONSOLE_OUTPUT
+   std::string out = message + strerror_s(errno_copy);
+   f_(out.c_str());
++#endif
+ }
+ 
+ std::string TOutput::strerror_s(int errno_copy) {
+-- 
+2.11.0.windows.1
+
