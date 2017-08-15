@@ -165,7 +165,6 @@ if(WINDOWS)
     -Woverloaded-virtual
     -Wformat
     -Wformat-security
-    -Werror=format-security
     -Wabi-tag
   )
   set(CXX_STDLIB "-stdlib=libc++")
@@ -218,6 +217,7 @@ if(POSIX)
     -pipe
     -fdata-sections
     -ffunction-sections
+    -Werror=format-security
   )
   if(NOT FREEBSD AND NOT DEFINED ENV{OSQUERY_BUILD_SHARED})
     add_compile_options(
@@ -229,12 +229,22 @@ elseif(WINDOWS)
   add_compile_options(
     /EHsc
     /W3
-    /guard:cf
   )
   add_definitions(
     -DWIN32_LEAN_AND_MEAN
     -DBOOST_ALL_NO_LIB
   )
+  if(NOT CMAKE_CXX_COMPILER MATCHES "clang")
+    add_compile_options(
+      /guard:cf
+    )
+  else()
+    add_compile_options(
+      -Wno-error=unused-command-line-argument
+      -Wno-error=deprecated-declarations
+      -Wno-error=unused-variable
+    )
+  endif()
 endif()
 
 set(TEST_ARGS "")

@@ -53,8 +53,6 @@ endif()
 # Add all and extra for osquery code.
 if(CLANG AND POSIX)
   add_compile_options(
-    -Wall
-    -Wextra
     -pedantic
     -Wuseless-cast
     -Wno-c99-extensions
