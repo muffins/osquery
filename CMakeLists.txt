@@ -243,6 +243,7 @@ elseif(WINDOWS)
       -Wno-error=unused-command-line-argument
       -Wno-error=deprecated-declarations
       -Wno-error=unused-variable
+      -Wno-error=fallback
     )
   endif()
 endif()
@@ -628,8 +629,8 @@ if(WINDOWS)
   set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static gtest/gmock library" FORCE)
 
   file(GLOB INCLUDE_DIRS LIST_DIRECTORIES true "${WINDOWS_DEP_DIR}/*/*/include")
-  include_directories(SYSTEM ${INCLUDE_DIRS})
-  include_directories(SYSTEM "${WINDOWS_DEP_DIR}/boost-msvc14/local")
+  include_directories(${INCLUDE_DIRS})
+  include_directories("${WINDOWS_DEP_DIR}/boost-msvc14/local")
 
   ## TODO(FIXME): temporary for now
   include_directories("${WINDOWS_DEP_DIR}/linenoise-ng/local/include/linenoise")
