@@ -18,6 +18,11 @@ set(OSQUERY_LOGGER_PLUGINS
   "plugins/stdout.cpp"
 )
 
+if(WINDOWS)
+  ADD_OSQUERY_LINK_CORE("Bcrypt.lib")
+  ADD_OSQUERY_LINK_CORE("UserEnv.lib")
+endif()
+
 if(LINUX)
   list(APPEND OSQUERY_LOGGER_PLUGINS "plugins/syslog_logger.cpp")
   ADD_OSQUERY_TEST_ADDITIONAL("logger/plugins/tests/syslog_logger_tests.cpp")
