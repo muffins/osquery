@@ -60,6 +60,7 @@ if(WINDOWS)
   ADD_OSQUERY_LINK_ADDITIONAL("SetupAPI.lib")
   ADD_OSQUERY_LINK_ADDITIONAL("Ws2_32.lib")
   ADD_OSQUERY_LINK_ADDITIONAL("version.lib")
+  ADD_OSQUERY_LINK_ADDITIONAL("Pdh.lib")
 endif()
 
 # Linux specific and applicable tables.
@@ -131,7 +132,7 @@ ADD_OSQUERY_LIBRARY_CORE(osquery_tables_utility
 if(NOT SKIP_AWS AND LINUX)
   file(GLOB OSQUERY_CLOUD_TABLES "cloud/*.[cpm]*")
   ADD_OSQUERY_LIBRARY_ADDITIONAL(osquery_cloud_tables ${OSQUERY_CLOUD_TABLES})
- 
+
   file(GLOB OSQUERY_CLOUD_TABLES_TESTS "cloud/tests/*.[cpm]*")
   if(OSQUERY_CLOUD_TABLES_TESTS)
     ADD_OSQUERY_TABLE_TEST(${OSQUERY_CLOUD_TABLES_TESTS})
