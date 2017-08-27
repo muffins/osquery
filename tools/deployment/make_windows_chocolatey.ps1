@@ -1,3 +1,10 @@
+#  Copyright (c) 2014-present, Facebook, Inc.
+#  All rights reserved.
+#
+#  This source code is licensed under the BSD-style license found in the
+#  LICENSE file in the root directory of this source tree. An additional grant
+#  of patent rights can be found in the PATENTS file in the same directory.
+
 # We make heavy use of Write-Host, because colors are awesome. #dealwithit.
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSAvoidUsingWriteHost", '', Scope="Function", Target="*")]
 param()
@@ -5,7 +12,7 @@ param()
 function Main() {
   $working_dir = Get-Location
   if (-not (Get-Command 7z.exe)) {
-    Write-Host '[-] 7z note found!  Please run .\tools\make-win64-dev-env.bat before continuing!' -ForegroundColor Red
+    Write-Host '[-] 7z not found!  Please run .\tools\make-win64-dev-env.bat before continuing!' -ForegroundColor Red
     exit
   }
 

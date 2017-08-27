@@ -1,3 +1,92 @@
+#  Copyright (c) 2014-present, Facebook, Inc.
+#  All rights reserved.
+#
+#  This source code is licensed under the BSD-style license found in the
+#  LICENSE file in the root directory of this source tree. An additional grant
+#  of patent rights can be found in the PATENTS file in the same directory.
+
+# Source the osquery utils script
+
+# We make heavy use of Write-Host, because colors are awesome. #dealwithit.
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSAvoidUsingWriteHost", '', Scope="Function", Target="*")]
+param()
+
+function Main() {
+  param(
+    [string] $configPath = '',
+    [string] $packsPath = '',
+    [string] $certsPath = ''
+  )
+
+  $working_dir = Get-Location
+  if ((-not (Get-Command candle.exe)) -or (-not (Get-Command light.exe))) {
+    Write-Host '[-] WiX toolkig not found. ' +`
+               'please run .\tools\make-win64-dev-env.bat before continuing!' `
+               -ForegroundColor Red
+    exit
+  }
+
+  if ($PSVersionTable.PSVersion.Major -lt 5) {
+    Write-Host '[-] Powershell 5.0 or great is required for this script.' `
+               -ForegroundColor Red
+    exit
+  }
+
+  if (-not (Test-Path (Join-Path (Get-location).Path 'tools\make-win64-binaries.bat'))) {
+    Write-Host '[-] This script must be run from the osquery repo root.' `
+               -ForegroundColor Red
+    exit
+  }
+  # Binaries might not be built, let's try to build them quick :)
+  if (-not (Test-Path (Join-Path (Get-Location).Path 'build\windows10\osquery\Release\osqueryd.exe'))) {
+    & '.\tools\make-win64-binaries.bat'
+  }
+  $shell = Join-Path $scriptPath 'build\windows10\osquery\Release\osqueryi.exe'
+  $daemon = Join-Path $scriptPath 'build\windows10\osquery\Release\osqueryd.exe'
+  if ((-not (Test-Path $shell)) -or (-not (Test-Path $daemon))) {
+    Write-Host '[-] Unable to find osquery binaries, check build script output.' `
+               -ForegroundColor Red
+    exit
+  }
+
+  # Listing of artifacts bundled with osquery
+  $scriptPath = Get-Location
+
+  # bundle default certs
+  if ($certsPath -eq '') {
+    $chocoPath = [System.Environment]::GetEnvironmentVariable('ChocolateyInstall', 'Machine')
+    $certs = Join-Path "$chocoPath" 'lib\openssl\local\certs'
+    if (-not (Test-Path $certs)) {
+      Write-Debug '[*] Did not find openssl certs.pem, skipping.'
+    }
+  }
+
+  # bundle default configuration
+  if ($configPath -eq '') {
+    $configPath = Join-Path $scriptPath 'tools\deployment\osquery.example.conf'
+    if (-not (Test-Path $conf)) {
+      Write-Debug '[*] Did not find example configuration, skipping.'
+    }
+  }
+
+  # bundle default packs
+  if ($packsPath -eq '') {
+    $packsPath = Join-Path $scriptPath 'packs'
+    if (-not (Test-Path $packs)) {
+      Write-Debug '[*] Did not find example packs, skipping.'
+    }
+  }
+
+  # Working directory and output of files will be in `build/msi`
+  $buildPath = Join-Path $scriptPath 'build\msi'
+  if (-not (Test-Path $buildPath)) {
+    New-Item -Force -ItemType Directory -Path $buildPath
+  }
+  Set-Location $buildPath
+
+
+  $wix =
+@'
 <?xml version='1.0' encoding='windows-1252'?>
 
 <?define OsqueryVersion = '2.5.3'?>
@@ -134,3 +223,13 @@
 
   </Product>
 </Wix>
+'@
+
+  $wix | Out-File -Encoding 'UTF8' "$buildPath\osquery.wxs"
+
+
+  Write-Host "[+] MSI Package written to $osqueryBuildPath" -ForegroundColor Green
+  Set-Location $workingDir
+}
+
+$null = Main
