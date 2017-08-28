@@ -32,12 +32,6 @@ const std::string kServiceDisplayName{"osquery daemon service"};
 static SERVICE_STATUS_HANDLE kStatusHandle = nullptr;
 static SERVICE_STATUS kServiceStatus = {0};
 
-/*
- * This event is set when a SERVICE_CONTROL_STOP or SERVICE_CONTROL_SHUTDOWN
- * message is received in the ServiceControlHandler
- */
-HANDLE kStopEvent = nullptr;
-
 /// Logging for when we need to debug this service
 #define SLOG(...) ::osquery::DebugPrintf("[osqueryd] " __VA_ARGS__)
 
@@ -57,6 +51,25 @@ void DebugPrintf(const char* fmt, ...) {
   }
 
   va_end(vl);
+}
+
+/*
+ * This event is set when a SERVICE_CONTROL_STOP or SERVICE_CONTROL_SHUTDOWN
+ * message is received in the ServiceControlHandler
+ */
+HANDLE kStopEvent = nullptr;
+const std::string kStopEventName{"osqueryd-service-stop-event"};
+
+// A helper function to return a HANDLE to the named Stop Event for child
+// processes
+HANDLE getStopEvent() {
+  auto stopEvent =
+      ::OpenEventA(SYNCHRONIZE, FALSE, osquery::kStopEventName.c_str());
+  if (stopEvent == nullptr) {
+    SLOG("Opening HANDLE to kStopEvent failed (lasterror=%i)",
+         ::GetLastError());
+  }
+  return stopEvent;
 }
 
 /*
@@ -268,8 +281,14 @@ void WINAPI ServiceControlHandler(DWORD control_code) {
     }
 
     UpdateServiceStatus(0, SERVICE_STOP_PENDING, 0, 4);
+    {
+      auto stopEvent = osquery::getStopEvent();
+      if (stopEvent != nullptr) {
+        SetEvent(stopEvent);
+        CloseHandle(stopEvent);
+      }
+    }
 
-    ::SetEvent(kStopEvent);
     break;
   default:
     break;
@@ -285,7 +304,7 @@ void WINAPI ServiceMain(DWORD argc, LPSTR* argv) {
     kServiceStatus.dwServiceSpecificExitCode = 0;
     UpdateServiceStatus(0, SERVICE_START_PENDING, 0, 0);
 
-    kStopEvent = ::CreateEventA(nullptr, TRUE, FALSE, nullptr);
+    kStopEvent = ::CreateEventA(nullptr, TRUE, FALSE, kStopEventName.c_str());
     if (kStopEvent != nullptr) {
       UpdateServiceStatus(
           SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SHUTDOWN, SERVICE_RUNNING, 0, 0);
@@ -308,7 +327,7 @@ void WINAPI ServiceMain(DWORD argc, LPSTR* argv) {
 
   UpdateServiceStatus(0, SERVICE_STOPPED, 0, 3);
 }
-}
+} // namespace osquery
 
 int main(int argc, char* argv[]) {
   SERVICE_TABLE_ENTRYA serviceTable[] = {
@@ -320,14 +339,16 @@ int main(int argc, char* argv[]) {
     // The event only gets initialized in the entry point of the service. Child
     // processes and those run from the commandline will have kStopEvent as a
     // nullptr
-    if (osquery::kStopEvent != nullptr) {
-      ::WaitForSingleObject(osquery::kStopEvent, INFINITE);
+
+    auto stopEvent = osquery::getStopEvent();
+    if (stopEvent != nullptr) {
+      ::WaitForSingleObject(stopEvent, INFINITE);
 
       osquery::UpdateServiceStatus(0, SERVICE_STOPPED, 0, 3);
       osquery::Initializer::requestShutdown();
+      CloseHandle(stopEvent);
     }
   });
-
   if (!::StartServiceCtrlDispatcherA(serviceTable)) {
     DWORD last_error = ::GetLastError();
     if (last_error == ERROR_FAILED_SERVICE_CONTROLLER_CONNECT) {
