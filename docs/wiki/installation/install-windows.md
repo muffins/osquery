@@ -6,7 +6,15 @@ Each osquery tag (stable release) is published to **chocolatey** for our support
 
 ## Installing osquery
 
-By default Chocolatey will install the binaries, example packs, example configuration, and an OpenSSL certificate bundle to `C:\ProgramData\osquery` and nothing more. You can pass Chocolatey the `--params='/InstallService'` flag or make use of osquery's `--install` flag with `C:\ProgramData\osquery\osqueryd\osqueryd.exe --install` to install a Windows system service for the **osqueryd** daemon.
+By default Chocolatey will install the binaries, example packs, example configuration, and an OpenSSL certificate bundle to `C:\ProgramData\osquery` and nothing more. In order to use osquery as a native Windows service, a few things must be configured. The directory in which `osqueryd.exe` lives must have an explicit Deny-Write ACL that inherits to child objects. This is done
+
+
+You can the install osquery as a SYSTEM level service via a few methods:
+1.) Pass Chocolatey the `--params='/InstallService'` flag during installation:
+```
+C:\> choco install osquery --params='/InstallService'
+```
+2.) Make use of osquery's `--install` flag with `C:\ProgramData\osquery\osqueryd\osqueryd.exe --install` to install a Windows system service for the **osqueryd** daemon.
 
 ## Running osquery
 
