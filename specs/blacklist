@@ -19,3 +19,4 @@ freebsd:smbios_tables
 
 # Blacklisting as an example:
 example
+carves

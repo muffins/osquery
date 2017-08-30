@@ -33,6 +33,9 @@ $sw = [System.Diagnostics.StopWatch]::startnew()
 # Keep the location of build script, to bring with in the chocolatey package
 $buildScript = $MyInvocation.MyCommand.Definition
 
+# Keep track of our location to restore later
+$currentLoc = Get-Location
+
 # Create the choco build dir if needed
 $buildPath = Get-OsqueryBuildPath
 if ($buildPath -eq '') {
@@ -45,21 +48,74 @@ if (-not (Test-Path "$chocoBuildPath")) {
 }
 Set-Location $chocoBuildPath
 
-Invoke-WebRequest $url -OutFile "gflags-$version.zip" -UserAgent [Microsoft.PowerShell.Commands.PSUserAgent]::Chrome
-7z x "gflags-$version.zip"
-Set-Location "gflags-$version"
+# Retreive the source
+if (-not (Test-Path "gflags-$version.zip")) {
+  Invoke-WebRequest $url -OutFile "gflags-$version.zip" `
+    -UserAgent [Microsoft.PowerShell.Commands.PSUserAgent]::Chrome
+}
+
+$sourceDir = Join-Path $(Get-Location) "gflags-$version"
+if (-not (Test-Path $sourceDir)) {
+  $7z = (Get-Command '7z').Source
+  $7zargs = "x gflags-$version.zip"
+  Start-OsqueryProcess $7z $7zargs
+}
+Set-Location $sourceDir
 
 # Set the cmake logic to generate a static build for us
-Add-Content -NoNewline -Path 'CMakeLists.txt' -Value "`nset(CMAKE_CXX_FLAGS_RELEASE `"`${CMAKE_CXX_FLAGS_RELEASE} /MT`")`nset(CMAKE_CXX_FLAGS_DEBUG `"`${CMAKE_CXX_FLAGS_DEBUG} /MTd`")"
+$staticBuildFlags = "`nset(CMAKE_CXX_FLAGS_RELEASE `"`${CMAKE_CXX_FLAGS_RELEASE} " +
+"/MT`")`nset(CMAKE_CXX_FLAGS_DEBUG `"`${CMAKE_CXX_FLAGS_DEBUG} /MTd`")"
+Add-Content `
+  -NoNewline `
+  -Path $(Join-Path $sourceDir 'CMakeLists.txt') `
+  -Value $staticBuildFlags
 
 # Build the libraries
 $buildDir = New-Item -Force -ItemType Directory -Path "osquery-win-build"
 Set-Location $buildDir
 
-cmake -DGFLAGS_BUILD_STATIC_LIBS=ON -DGFLAGS_BUILD_SHARED_LIBS=OFF -DGFLAGS_BUILD_gflags_LIB=ON -DGFLAGS_NAMESPACE=google ..\ -G "Visual Studio 14 2015 Win64"
+# Generate the solution files
+$envArch = [System.Environment]::GetEnvironmentVariable('OSQ32')
+$arch = ''
+$cmakeBuildType = ''
+if ($envArch -eq 1) {
+  $arch = 'Win32'
+  $cmakeBuildType = 'Visual Studio 14 2015'
+} else {
+  $arch = 'x64'
+  $cmakeBuildType = 'Visual Studio 14 2015 Win64'
+}
+Move-Item -Force $PROFILE "$PROFILE.bak"
+$cmake = (Get-Command 'cmake').Source
+$cmakeArgs = @(
+  "-G `"$cmakeBuildType`"",
+  '-DGFLAGS_BUILD_STATIC_LIBS=ON',
+  '-DGFLAGS_BUILD_SHARED_LIBS=OFF',
+  '-DGFLAGS_BUILD_gflags_LIB=ON',
+  '-DGFLAGS_NAMESPACE=google',
+  '../'
+)
+Start-OsqueryProcess $cmake $cmakeArgs
 
-msbuild 'gflags.sln' /p:Configuration=Release /m /t:gflags_static /v:m
-msbuild 'gflags.sln' /p:Configuration=Debug /m /t:gflags_static /v:m
+# Build the libraries
+$msbuild = (Get-Command 'msbuild').Source
+$sln = 'gflags.sln'
+$configurations = @(
+  'Release',
+  'Debug'
+)
+foreach ($cfg in $configurations) {
+  $msbuildArgs = @(
+    "$sln",
+    "/p:Configuration=$cfg",
+    "/p:PlatformType=$arch",
+    "/p:Platform=$arch",
+    '/t:gflags_static',
+    '/m',
+    '/v:m'
+  )
+  Start-OsqueryProcess $msbuild $msbuildArgs
+}
 
 # Construct the Chocolatey Package
 $chocoDir = New-Item -ItemType Directory -Path "osquery-choco"
@@ -68,7 +124,15 @@ $includeDir = New-Item -ItemType Directory -Path "local\include"
 $libDir = New-Item -ItemType Directory -Path "local\lib"
 $srcDir = New-Item -ItemType Directory -Path "local\src"
 
-Write-NuSpec $packageName $chocoVersion $authors $owners $projectSource $packageSourceUrl $copyright $license
+Write-NuSpec `
+  $packageName `
+  $chocoVersion `
+  $authors `
+  $owners `
+  $projectSource `
+  $packageSourceUrl `
+  $copyright `
+  $license
 
 # Rename the Debug libraries to end with a `_dbg.lib`
 foreach ($lib in Get-ChildItem "$buildDir\lib\Debug\") {
@@ -82,10 +146,15 @@ Copy-Item -Recurse "$buildDir\include\gflags" $includeDir
 Copy-Item $buildScript $srcDir
 choco pack
 
-Write-Host "[*] Build took $($sw.ElapsedMilliseconds) ms" -foregroundcolor DarkGreen
+Write-Host "[*] Build took $($sw.ElapsedMilliseconds) ms" `
+  -ForegroundColor DarkGreen
 if (Test-Path "$packageName.$chocoVersion.nupkg") {
-  Write-Host "[+] Finished building $packageName v$chocoVersion." -foregroundcolor Green
+  $package = "$(Get-Location)\$packageName.$chocoVersion.nupkg"
+  Write-Host `
+    "[+] Finished building. Package written to $package" -ForegroundColor Green
+} else {
+  Write-Host `
+    "[-] Failed to build $packageName v$chocoVersion." `
+    -ForegroundColor Red
 }
-else {
-  Write-Host "[-] Failed to build $packageName v$chocoVersion." -foregroundcolor Red
-}
+Set-Location $currentLoc

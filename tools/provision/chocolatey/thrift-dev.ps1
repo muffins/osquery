@@ -28,14 +28,14 @@ $patchfiles = @(
 # Invoke our utilities file
 . $(Join-Path $parentPath "osquery_utils.ps1")
 
-# Invoke the MSVC developer tools/env
-Invoke-BatchFile "$env:VS140COMNTOOLS\..\..\vc\vcvarsall.bat" amd64
-
 # Time our execution
 $sw = [System.Diagnostics.StopWatch]::startnew()
 
 # Keep the location of build script, to bring with in the chocolatey package
 $buildScript = $MyInvocation.MyCommand.Definition
+
+# Keep track of our location to restore later
+$currentLoc = Get-Location
 
 # Create the choco build dir if needed
 $buildPath = Get-OsqueryBuildPath
@@ -74,10 +74,27 @@ Add-Content `
   -Path "$buildDir\..\lib\cpp\CMakeLists.txt" `
   -Value "`nadd_definitions(-DTHRIFT_SQUELCH_CONSOLE_OUTPUT=1)"
 
-# Generate the solution files
+# Generate the .sln
+$envArch = [System.Environment]::GetEnvironmentVariable('OSQ32')
+$arch = ''
+$platform = ''
+$cmakeBuildType = ''
+if ($envArch -eq 1) {
+  $arch = 'Win32'
+  $platform = 'x86'
+  $cmakeBuildType = 'Visual Studio 14 2015'
+} else {
+  $arch = 'x64'
+  $platform = 'amd64'
+  $cmakeBuildType = 'Visual Studio 14 2015 Win64'
+}
+
+# Invoke the MSVC developer tools/env
+Invoke-BatchFile "$env:VS140COMNTOOLS\..\..\vc\vcvarsall.bat" $platform
+
 $cmake = (Get-Command 'cmake').Source
 $cmakeArgs = @(
-  '-G "Visual Studio 14 2015 Win64"',
+  "-G `"$cmakeBuildType`"",
   '-DBUILD_COMPILER=ON',
   '-DWITH_SHARED_LIB=OFF',
   '-DBUILD_TESTING=OFF',
@@ -107,6 +124,8 @@ foreach ($target in $targets) {
   $msbuildArgs = @(
     "`"$sln`"",
     "/p:Configuration=Release",
+    "/p:PlatformType=$arch",
+    "/p:Platform=$arch",
     "/t:$target",
     '/m',
     '/v:m'
@@ -117,6 +136,8 @@ foreach ($target in $targets) {
   $msbuildArgs = @(
     "`"$sln`"",
     "/p:Configuration=Debug",
+    "/p:PlatformType=$arch",
+    "/p:Platform=$arch",
     "/t:$target",
     '/m',
     '/v:m'
@@ -128,6 +149,8 @@ foreach ($target in $targets) {
 $msbuildArgs = @(
   "`"$sln`"",
   '/p:Configuration=Release',
+  "/p:PlatformType=$arch",
+  "/p:Platform=$arch",
   '/t:thrift-compiler',
   '/m',
   '/v:m'
@@ -176,12 +199,12 @@ choco pack
 Write-Host "[*] Build took $($sw.ElapsedMilliseconds) ms" `
   -ForegroundColor DarkGreen
 if (Test-Path "$packageName.$chocoVersion.nupkg") {
+  $package = "$(Get-Location)\$packageName.$chocoVersion.nupkg"
   Write-Host `
-    "[+] Finished building $packageName v$chocoVersion." `
-    -ForegroundColor Green
-}
-else {
+    "[+] Finished building. Package written to $package" -ForegroundColor Green
+} else {
   Write-Host `
     "[-] Failed to build $packageName v$chocoVersion." `
     -ForegroundColor Red
 }
+Set-Location $currentLoc

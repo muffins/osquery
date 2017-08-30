@@ -33,6 +33,9 @@ $sw = [System.Diagnostics.StopWatch]::startnew()
 # Keep the location of build script, to bring with in the chocolatey package
 $buildScript = $MyInvocation.MyCommand.Definition
 
+# Keep track of our location to restore later
+$currentLoc = Get-Location
+
 # Create the choco build dir if needed
 $buildPath = Get-OsqueryBuildPath
 if ($buildPath -eq '') {
@@ -46,21 +49,63 @@ if (-not (Test-Path "$chocoBuildPath")) {
 Set-Location $chocoBuildPath
 
 # we currently just use master.
-git clone $url
-Set-Location "glog"
+$sourceDir = Join-Path $(Get-Location) 'glog'
+$git = (Get-Command 'git').Source
+$gitArgs = "clone $url"
+Start-OsqueryProcess $git $gitArgs
+Set-Location $sourceDir
 
 # Set the cmake logic to generate a static build for us
-Add-Content -NoNewline -Path 'CMakeLists.txt' -Value "`nset(CMAKE_CXX_FLAGS_RELEASE `"`${CMAKE_CXX_FLAGS_RELEASE} /MT`")`nset(CMAKE_CXX_FLAGS_DEBUG `"`${CMAKE_CXX_FLAGS_DEBUG} /MTd`")"
+$staticBuildFlags = "`nset(CMAKE_CXX_FLAGS_RELEASE `"`${CMAKE_CXX_FLAGS_RELEASE} " +
+                    "/MT`")`nset(CMAKE_CXX_FLAGS_DEBUG `"`${CMAKE_CXX_FLAGS_DEBUG} /MTd`")"
+Add-Content `
+  -NoNewline `
+  -Path $(Join-Path $sourceDir 'CMakeLists.txt') `
+  -Value $staticBuildFlags
 
 # Build the libraries
 $buildDir = New-Item -Force -ItemType Directory -Path "osquery-win-build"
 Set-Location $buildDir
 
-# Generate the .sln
-cmake -G "Visual Studio 14 2015 Win64" -DCMAKE_PREFIX_PATH=C:\ProgramData\chocolatey\lib\gflags\local\lib\ ..\
+# Generate the solution files
+$envArch = [System.Environment]::GetEnvironmentVariable('OSQ32')
+$arch = ''
+$cmakeBuildType = ''
+if ($envArch -eq 1) {
+  $arch = 'Win32'
+  $cmakeBuildType = 'Visual Studio 14 2015'
+} else {
+  $arch = 'x64'
+  $cmakeBuildType = 'Visual Studio 14 2015 Win64'
+}
+Move-Item -Force $PROFILE "$PROFILE.bak"
+$cmake = (Get-Command 'cmake').Source
+$cmakeArgs = @(
+  "-G `"$cmakeBuildType`"",
+  '-DCMAKE_PREFIX_PATH=C:\ProgramData\chocolatey\lib\gflags\local\lib\',
+  '../'
+)
+Start-OsqueryProcess $cmake $cmakeArgs
 
-msbuild 'google-glog.sln' /p:Configuration=Release /m /t:glog /v:m
-msbuild 'google-glog.sln' /p:Configuration=Debug /m /t:glog /v:m
+# Build the libraries
+$msbuild = (Get-Command 'msbuild').Source
+$sln = 'glog.sln'
+$configurations = @(
+  'Release',
+  'Debug'
+)
+foreach ($cfg in $configurations) {
+  $msbuildArgs = @(
+    "$sln",
+    "/p:Configuration=$cfg",
+    "/p:PlatformType=$arch",
+    "/p:Platform=$arch",
+    '/t:glog',
+    '/m',
+    '/v:m'
+  )
+  Start-OsqueryProcess $msbuild $msbuildArgs
+}
 
 # Construct the Chocolatey Package
 $chocoDir = New-Item -ItemType Directory -Path "osquery-choco"
@@ -69,7 +114,15 @@ $includeDir = New-Item -ItemType Directory -Path "local\include"
 $libDir = New-Item -ItemType Directory -Path "local\lib"
 $srcDir = New-Item -ItemType Directory -Path "local\src"
 
-Write-NuSpec $packageName $chocoVersion $authors $owners $projectSource $packageSourceUrl $copyright $license
+Write-NuSpec `
+  $packageName `
+  $chocoVersion `
+  $authors `
+  $owners `
+  $projectSource `
+  $packageSourceUrl `
+  $copyright `
+  $license
 
 # Rename the Debug libraries to end with a `_dbg.lib`
 foreach ($lib in Get-ChildItem "$buildDir\Debug\") {
@@ -83,10 +136,15 @@ Copy-Item -Recurse "$buildDir\..\src\windows\glog" $includeDir
 Copy-Item $buildScript $srcDir
 choco pack
 
-Write-Host "[*] Build took $($sw.ElapsedMilliseconds) ms" -foregroundcolor DarkGreen
+Write-Host "[*] Build took $($sw.ElapsedMilliseconds) ms" `
+-ForegroundColor DarkGreen
 if (Test-Path "$packageName.$chocoVersion.nupkg") {
-  Write-Host "[+] Finished building $packageName v$chocoVersion." -foregroundcolor Green
+$package = "$(Get-Location)\$packageName.$chocoVersion.nupkg"
+Write-Host `
+  "[+] Finished building. Package written to $package" -ForegroundColor Green
+} else {
+Write-Host `
+  "[-] Failed to build $packageName v$chocoVersion." `
+  -ForegroundColor Red
 }
-else {
-  Write-Host "[-] Failed to build $packageName v$chocoVersion." -foregroundcolor Red
-}
+Set-Location $currentLoc

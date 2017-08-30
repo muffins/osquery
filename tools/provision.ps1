@@ -292,7 +292,7 @@ function Install-ThirdParty {
     "linenoise-ng.1.0.0-r1",
     "llvm-clang.4.0.1",
     "openssl.1.0.2-k",
-    "rocksdb.5.1.4-r1",
+    "rocksdb.5.7.1",
     "thrift-dev.0.10.0-r4",
     "zlib.1.2.8",
     "libarchive.3.3.1-r1",
@@ -398,6 +398,7 @@ function Main {
   $out = Install-ChocoPackage '7zip.commandline'
   $out = Install-ChocoPackage 'vswhere'
   $out = Install-ChocoPackage 'cmake.portable'
+  $out = Install-ChocoPackage 'nasm'
   $chocoParams = @("--params=`"/InstallDir:C:\tools\python2`"")
   $out = Install-ChocoPackage 'python2' '' ${chocoParams}
   # Convenience variable for accessing Python

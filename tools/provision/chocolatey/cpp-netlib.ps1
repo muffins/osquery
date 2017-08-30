@@ -10,14 +10,12 @@
 # $version - The version of the software package to build
 # $chocoVersion - The chocolatey package version, used for incremental bumps
 #                 without changing the version of the software package
-# Note: not currently used as @poppyseedplehzr maintains our working branch
+# Note: not currently used as @muffins maintains our working branch
 $version = '0.12.0-r4'
 $chocoVersion = $version
 $packageName = 'cpp-netlib'
-$projectSource = 'https://github.com/poppyseedplehzr/' +
-                 'cpp-netlib/tree/win-osquery-build'
-$packageSourceUrl = 'https://github.com/poppyseedplehzr/' +
-                    'cpp-netlib/tree/win-osquery-build'
+$projectSource = 'https://github.com/cpp-netlib/cpp-netlib'
+$packageSourceUrl = 'https://github.com/cpp-netlib/cpp-netlib'
 $authors = 'cpp-netlib'
 $owners = 'cpp-netlib'
 $copyright = 'https://github.com/cpp-netlib/cpp-netlib/blob/' +
@@ -27,9 +25,6 @@ $license = 'https://github.com/cpp-netlib/cpp-netlib/blob/' +
 
 # Invoke our utilities file
 . "$(Split-Path -Parent $MyInvocation.MyCommand.Definition)\osquery_utils.ps1"
-
-# Invoke the MSVC developer tools/env
-Invoke-BatchFile "$env:VS140COMNTOOLS\..\..\vc\vcvarsall.bat" amd64
 
 $chocolateyRoot = 'C:\ProgramData\chocolatey\lib'
 $openSslRoot = "$chocolateyRoot\openssl\local"
@@ -46,6 +41,9 @@ $sw = [System.Diagnostics.StopWatch]::startnew()
 # Keep the location of build script, to bring with in the chocolatey package
 $buildScript = $MyInvocation.MyCommand.Definition
 
+# Keep track of our location to restore later
+$currentLoc = Get-Location
+
 # Create the choco build dir if needed
 $buildPath = Get-OsqueryBuildPath
 if ($buildPath -eq '') {
@@ -58,12 +56,20 @@ if (-not (Test-Path "$chocoBuildPath")) {
 }
 Set-Location $chocoBuildPath
 
-# Checkout our working, patched, build of cpp-netlib 0.12-final
-git clone https://github.com/poppyseedplehzr/cpp-netlib.git
-$sourceDir = 'cpp-netlib'
+$sourceDir = Join-Path $(Get-Location) "$packageName"
+$git = (Get-Command 'git').Source
+$gitArgs = 'clone https://github.com/muffins/cpp-netlib.git'
+Start-OsqueryProcess $git $gitArgs
+
 Set-Location $sourceDir
-git submodule update --init
-git checkout win-osquery-build
+
+# Init the submodules, as we require asio
+$gitArgs = 'checkout win-osquery-build'
+Start-OsqueryProcess $git $gitArgs
+$gitArgs = 'submodule init'
+Start-OsqueryProcess $git $gitArgs
+$gitArgs = 'submodule update init'
+Start-OsqueryProcess $git $gitArgs
 
 # Build the libraries, remove any old versions first.
 $buildDir = Join-Path $(Get-Location) 'osquery-win-build'
@@ -73,11 +79,26 @@ if(Test-Path $buildDir){
 New-Item -Force -ItemType Directory -Path $buildDir
 Set-Location $buildDir
 
-# Generate the .sln
-# Boost Static Libs - 06e23a7d34ead324d45b00d60bdfa9d0acb9bc2c
+# Configure and build the libraries
+$envArch = [System.Environment]::GetEnvironmentVariable('OSQ32')
+$arch = ''
+$platform = ''
+$cmakeBuildType = ''
+if ($envArch -eq 1) {
+  $cmakeBuildType = 'Visual Studio 14 2015'
+  $arch = 'Win32'
+  $platform = 'x86'
+} else {
+  $cmakeBuildType = 'Visual Studio 14 2015 Win64'
+  $arch = 'x64'
+  $platform = 'amd64'
+}
+
+Invoke-BatchFile "$env:VS140COMNTOOLS\..\..\vc\vcvarsall.bat" $platform
+
 $cmake = (Get-Command 'cmake').Source
 $cmakeArgs = @(
-  '-G "Visual Studio 14 2015 Win64"',
+  "-G `"$cmakeBuildType`"",
   '-DCPP-NETLIB_BUILD_TESTS=OFF',
   '-DCPP-NETLIB_BUILD_EXAMPLES=OFF',
   '-DCPP-NETLIB_BUILD_SHARED_LIBS=OFF',
@@ -93,23 +114,19 @@ Start-OsqueryProcess $cmake $cmakeArgs
 
 # Build the libraries
 $msbuild = (Get-Command 'msbuild').Source
-$msbuildArgs = @(
-  'cpp-netlib.sln',
-  '/p:Configuration=Release',
-  '/t:ALL_BUILD',
-  '/m',
-  '/v:m'
-)
-Start-OsqueryProcess $msbuild $msbuildArgs
-
-$msbuildArgs = @(
-  'cpp-netlib.sln',
-  '/p:Configuration=Debug',
-  '/t:ALL_BUILD',
-  '/m',
-  '/v:m'
-)
-Start-OsqueryProcess $msbuild $msbuildArgs
+$configs = @('Release', 'Debug')
+foreach ($cfg in $configs) {
+  $msbuildArgs = @(
+    'cpp-netlib.sln',
+    "/p:Configuration=$cfg",
+    "/p:PlatformType=$arch",
+    "/p:Platform=$arch",
+    '/t:ALL_BUILD',
+    '/m',
+    '/v:m'
+  )
+  Start-OsqueryProcess $msbuild $msbuildArgs
+}
 
 # If the build path exists, purge it for a clean packaging
 $chocoDir = Join-Path $(Get-Location) 'osquery-choco'
@@ -153,12 +170,12 @@ choco pack
 Write-Host "[*] Build took $($sw.ElapsedMilliseconds) ms" `
   -ForegroundColor DarkGreen
 if (Test-Path "$packageName.$chocoVersion.nupkg") {
+  $package = "$(Get-Location)\$packageName.$chocoVersion.nupkg"
   Write-Host `
-    "[+] Finished building $packageName v$chocoVersion." `
-    -ForegroundColor Green
-}
-else {
+    "[+] Finished building. Package written to $package" -ForegroundColor Green
+} else {
   Write-Host `
     "[-] Failed to build $packageName v$chocoVersion." `
     -ForegroundColor Red
 }
+Set-Location $currentLoc

@@ -20,8 +20,8 @@ $url = "https://github.com/facebook/zstd/archive/v$version.zip"
 # Invoke our utilities file
 . "$(Split-Path -Parent $MyInvocation.MyCommand.Definition)\osquery_utils.ps1"
 
-# Invoke the MSVC developer tools/env
-Invoke-BatchFile "$env:VS140COMNTOOLS\..\..\vc\vcvarsall.bat" amd64
+# Save loc for restoring later
+$currentLoc = Get-Location
 
 # Time our execution
 $sw = [System.Diagnostics.StopWatch]::startnew()
@@ -56,11 +56,47 @@ if (-not (Test-Path $sourceDir)) {
 }
 Set-Location $sourceDir
 
-$vcxprojLocation = 'build\VS2010\libzstd\libzstd.vcxproj'
+
+# Configure and build the libraries
+$envArch = [System.Environment]::GetEnvironmentVariable('OSQ32')
+$arch = ''
+$platform = ''
+$cmakeBuildType = ''
+if ($envArch -eq 1) {
+  $arch = 'Win32'
+  $platform = 'x86'
+} else {
+  $arch = 'x64'
+  $platform = 'amd64'
+}
+
+Invoke-BatchFile "$env:VS140COMNTOOLS\..\..\vc\vcvarsall.bat" $platform
+
+$vcxprojLocation = Join-Path $(Get-Location) 'build\VS2010\libzstd\libzstd.vcxproj'
 # Patch the AssemblerOutput out of the project
-(Get-Content $vcxprojLocation).replace('<AssemblerOutput>All</AssemblerOutput>', '<AssemblerOutput>NoListing</AssemblerOutput>') | Set-Content $vcxprojLocation
-msbuild "build\VS2010\zstd.sln" /verbosity:minimal /nologo /t:Clean,libzstd /p:Platform=x64 /p:Configuration=Release /p:PlatformToolset=v140
- 
+Move-Item -Force $vcxprojLocation "$vcxprojLocation.bak"
+$old = '<AssemblerOutput>All</AssemblerOutput>'
+$new = '<AssemblerOutput>NoListing</AssemblerOutput>'
+(Get-Content "$vcxprojLocation.bak").replace($old, $new) |
+  Set-Content $vcxprojLocation
+
+# Build the libraries
+$msbuild = (Get-Command 'msbuild').Source
+$configs = @('Release', 'Debug')
+foreach ($cfg in $configs) {
+  $msbuildArgs = @(
+    'build\VS2010\zstd.sln',
+    "/p:Configuration=$cfg",
+    "/p:PlatformType=$arch",
+    "/p:Platform=$arch",
+    '/p:PlatformToolset=v140',
+    '/t:Clean,libzstd',
+    '/m',
+    '/v:m'
+  )
+  Start-OsqueryProcess $msbuild $msbuildArgs
+}
+
 # Construct the Chocolatey Package
 $chocoDir = New-Item -ItemType Directory -Path 'osquery-choco'
 Set-Location $chocoDir
@@ -79,7 +115,10 @@ Write-NuSpec `
   $license
 
 Set-Location $sourceDir
-Copy-Item "build\VS2010\bin\x64_Release\libzstd_static.lib" $libDir
+$relLibPath = "build\VS2010\bin\$arch" + '_Release\libzstd_static.lib'
+$debLibPath = "build\VS2010\bin\$arch" + '_Debug\libzstd_static.lib'
+Copy-Item  $relLibPath $libDir
+Copy-Item $debLibPath "$libDir\libzstd_static_dbg.lib"
 Copy-Item -Recurse "lib\zstd.h" $includeDir
 Copy-Item $buildScript $srcDir
 Set-Location 'osquery-choco'
@@ -88,12 +127,12 @@ choco pack
 Write-Host "[*] Build took $($sw.ElapsedMilliseconds) ms" `
   -ForegroundColor DarkGreen
 if (Test-Path "$packageName.$chocoVersion.nupkg") {
+  $package = "$(Get-Location)\$packageName.$chocoVersion.nupkg"
   Write-Host `
-    "[+] Finished building $packageName v$chocoVersion." `
-    -ForegroundColor Green
-}
-else {
+    "[+] Finished building. Package written to $package" -ForegroundColor Green
+} else {
   Write-Host `
     "[-] Failed to build $packageName v$chocoVersion." `
     -ForegroundColor Red
 }
+Set-Location $currentLoc

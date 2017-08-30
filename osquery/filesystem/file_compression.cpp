@@ -15,15 +15,19 @@
 #endif
 
 // This define is required for Windows static linking of libarchive
+#ifndef SKIP_CARVER
 #define LIBARCHIVE_STATIC
 #include <archive.h>
 #include <archive_entry.h>
+#endif
 #include <zstd.h>
 
 #include <osquery/flags.h>
 #include <osquery/system.h>
 
+#ifndef SKIP_CARVER
 #include "osquery/carver/carver.h"
+#endif
 #include "osquery/filesystem/fileops.h"
 
 namespace osquery {
@@ -152,6 +156,7 @@ Status decompress(const boost::filesystem::path& in,
   return Status(0);
 }
 
+#ifndef SKIP_CARVER
 Status archive(const std::set<boost::filesystem::path>& paths,
                const boost::filesystem::path& out) {
   auto arch = archive_write_new();
@@ -192,4 +197,5 @@ Status archive(const std::set<boost::filesystem::path>& paths,
   archive_write_free(arch);
   return Status(0, "Ok");
 };
+#endif
 } // namespace osquery

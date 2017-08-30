@@ -85,10 +85,19 @@ if (-not (Test-Path $b2)) {
 }
 
 $installPrefix = 'osquery-boost-libs'
-$arch = '64'
+$envArch = [System.Environment]::GetEnvironmentVariable('OSQ32')
+$arch = ''
+$cmakeBuildType = ''
+if ($envArch -eq 1) {
+  $arch = '32'
+  $cmakeBuildType = 'Visual Studio 14 2015'
+} else {
+  $arch = '64'
+  $cmakeBuildType = 'Visual Studio 14 2015 Win64'
+}
 $toolset = 'msvc-14.0'
 # Build the boost libraries
-$b2x64args = @(
+$b2args = @(
   "-j$numJobs",
   "--prefix=$installPrefix",
   "toolset=$toolset",
@@ -105,7 +114,7 @@ $b2x64args = @(
   '--stagedir=stage',
   'install'
 )
-Start-OsqueryProcess $b2 $b2x64args
+Start-OsqueryProcess $b2 $b2args
 
 # If the build path exists, purge it for a clean packaging
 $chocoDir = Join-Path $(Get-Location) 'osquery-choco'
@@ -141,8 +150,7 @@ if (Test-Path "$packageName.$chocoVersion.nupkg") {
   $package = "$(Get-Location)\$packageName.$chocoVersion.nupkg"
   Write-Host `
     "[+] Finished building. Package written to $package" -ForegroundColor Green
-}
-else {
+} else {
   Write-Host `
     "[-] Failed to build $packageName v$chocoVersion." `
     -ForegroundColor Red
