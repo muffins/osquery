@@ -24,9 +24,6 @@ $url = 'https://github.com/google/glog.git'
 # Invoke our utilities file
 . "$(Split-Path -Parent $MyInvocation.MyCommand.Definition)\osquery_utils.ps1"
 
-# Invoke the MSVC developer tools/env
-Invoke-BatchFile "$env:VS140COMNTOOLS\..\..\vc\vcvarsall.bat" amd64
-
 # Time our execution
 $sw = [System.Diagnostics.StopWatch]::startnew()
 
@@ -70,15 +67,20 @@ Set-Location $buildDir
 # Generate the solution files
 $envArch = [System.Environment]::GetEnvironmentVariable('OSQ32')
 $arch = ''
+$platform = ''
 $cmakeBuildType = ''
 if ($envArch -eq 1) {
   $arch = 'Win32'
+  $platform = 'x86'
   $cmakeBuildType = 'Visual Studio 14 2015'
 } else {
   $arch = 'x64'
+  $platform = 'amd64'
   $cmakeBuildType = 'Visual Studio 14 2015 Win64'
 }
-Move-Item -Force $PROFILE "$PROFILE.bak"
+
+Invoke-BatchFile "$env:VS140COMNTOOLS\..\..\vc\vcvarsall.bat" $platform
+
 $cmake = (Get-Command 'cmake').Source
 $cmakeArgs = @(
   "-G `"$cmakeBuildType`"",

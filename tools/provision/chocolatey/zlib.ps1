@@ -76,13 +76,13 @@ $arch = ''
 $platform = ''
 $cmakeBuildType = ''
 if ($envArch -eq 1) {
-  $cmakeBuildType = 'Visual Studio 14 2015'
   $arch = 'Win32'
   $platform = 'x86'
+  $cmakeBuildType = 'Visual Studio 14 2015'
 } else {
-  $cmakeBuildType = 'Visual Studio 14 2015 Win64'
   $arch = 'x64'
   $platform = 'amd64'
+  $cmakeBuildType = 'Visual Studio 14 2015 Win64'
 }
 
 Invoke-BatchFile "$env:VS140COMNTOOLS\..\..\vc\vcvarsall.bat" $platform

@@ -8,7 +8,6 @@ cd .\build\windows10
 IF NOT DEFINED OSQ32 (
   SET generator="Visual Studio 14 2015 Win64"
   call "%VS140COMNTOOLS%vcvarsqueryregistry.bat" 64bit
-  call "%VCINSTALLDIR%vcvarsall.bat" amd64
 ) ELSE (
   SET generator="Visual Studio 14 2015"
   call "%VS140COMNTOOLS%vcvarsqueryregistry.bat" 32bit

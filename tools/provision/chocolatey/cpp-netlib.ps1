@@ -23,6 +23,9 @@ $copyright = 'https://github.com/cpp-netlib/cpp-netlib/blob/' +
 $license = 'https://github.com/cpp-netlib/cpp-netlib/blob/' +
            'master/LICENSE_1_0.txt'
 
+# We host a patched version of cpp-netlib for Windows
+$sourceUrl = 'https://github.com/muffins/cpp-netlib/archive/win-osquery-build.zip'
+
 # Invoke our utilities file
 . "$(Split-Path -Parent $MyInvocation.MyCommand.Definition)\osquery_utils.ps1"
 
