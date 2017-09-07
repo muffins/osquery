@@ -31,8 +31,7 @@ function Set-DenyWriteAcl {
     # We only support adding or removing the ACL
     if ($action -ieq 'add') {
       $acl.SetAccessRule($accessRule)
-    }
-    else {
+    } else {
       $acl.RemoveAccessRule($accessRule)
     }
     $acl | Set-Acl $targetDir
@@ -118,9 +117,10 @@ function Start-OsqueryProcess {
     [array] $buildArgs = @()
   )
   $out = Start-Process `
-          -FilePath $binaryPath `
-          -ArgumentList $buildArgs `
-          -NoNewWindow `
-          -Wait | Wait-Process
+    -FilePath $binaryPath `
+    -ArgumentList $buildArgs `
+    -NoNewWindow `
+    -PassThru
+  $out.WaitForExit()
   return $out
 }

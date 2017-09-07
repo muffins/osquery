@@ -294,7 +294,7 @@ function Install-ThirdParty {
     "openssl.1.0.2-k",
     "rocksdb.5.7.1",
     "thrift-dev.0.10.0-r4",
-    "zlib.1.2.8",
+    "zlib.1.2.11",
     "libarchive.3.3.1-r1",
     "rapidjson.1.1.0"
     "zstd.1.2.0-r3"
