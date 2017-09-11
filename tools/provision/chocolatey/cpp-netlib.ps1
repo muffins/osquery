@@ -71,7 +71,7 @@ $gitArgs = 'checkout win-osquery-build'
 Start-OsqueryProcess $git $gitArgs
 $gitArgs = 'submodule init'
 Start-OsqueryProcess $git $gitArgs
-$gitArgs = 'submodule update init'
+$gitArgs = 'submodule update'
 Start-OsqueryProcess $git $gitArgs
 
 # Build the libraries, remove any old versions first.
