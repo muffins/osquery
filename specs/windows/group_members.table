@@ -1,0 +1,10 @@
+table_name("group_members")
+description("Local system group members.")
+schema([
+    Column("ugid", TEXT, "Unique group ID", index=True),
+    Column("uuid", TEXT, "Unique member user ID"),
+    Column("groupname", TEXT, "Group name"),
+    Column("member", TEXT, "Member"),
+    Column("type", TEXT, "Group member type"),
+])
+implementation("group_members@genGroupMembers")
