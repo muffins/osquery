@@ -5,7 +5,7 @@
 #  LICENSE file in the root directory of this source tree. An additional grant
 #  of patent rights can be found in the PATENTS file in the same directory.
 
-$osquery_utils = '.\tools\provision\osquery_utils.ps1'
+$osquery_utils = '.\tools\provision\chocolatey\osquery_utils.ps1'
 $cwd = Get-Location
 if (-not (Test-Path (Join-Path $cwd $osquery_utils))) {
   $msg = '[-] This script must be run from the osquery source root.'
@@ -21,26 +21,31 @@ if ((Get-Command vswhere) -eq '') {
 
 . "$osquery_utils"
 
-function Initialize-OsquerySolution () {
+function Initialize-OsquerySolution {
   $vswhere = (Get-Command vswhere).Source
   $vswhereArgs = @(
     '-latest'
   )
-  Start-OsqueryProcess $vswhere $vswhereArgs
-  
+  $out = Start-OsqueryProcess $vswhere $vswhereArgs
+
+  $lines = (Select-String -Pattern 'installationPath:' -InputObject $out) `
+           -Split '[\r\n]'
+  foreach ($l in $lines) {
+    
+  }
 
 
   Invoke-BatchFile "$env:VS140COMNTOOLS\..\..\vc\vcvarsall.bat" amd64
 
 }
 
-function New-OsqueryBuild() {
+function New-OsqueryBuild {
 
 }
 
-function main() {
+function main {
   Initialize-OsquerySolution
   New-OsqueryBuild
 }
 
-$null = build
+$null = main
