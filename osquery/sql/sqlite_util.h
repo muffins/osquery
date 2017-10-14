@@ -148,7 +148,7 @@ class SQLiteDBManager : private boost::noncopyable {
    * @return a SQLiteDBInstance with all virtual tables attached.
    */
   static SQLiteDBInstanceRef get() {
-    return getConnection();
+    return getConnection(Initializer::isShell() ? true : false);
   }
 
   /// See `get` but always return a transient DB connection (for testing).
