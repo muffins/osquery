@@ -676,7 +676,7 @@ def expectTrue(functional, interval=0.01, timeout=8):
 
 def assertPermissions():
     stat_info = os.stat('.')
-    if stat_info.st_uid != os.getuid():
+    if os.name != "nt" and stat_info.st_uid != os.getuid():
         print(utils.lightred("Will not load modules/extensions in tests."))
         print(utils.lightred("Repository owner (%d) executer (%d) mismatch" % (
             stat_info.st_uid, os.getuid())))

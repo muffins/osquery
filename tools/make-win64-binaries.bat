@@ -22,7 +22,7 @@ for %%t in (shell,daemon) do (
 
 :: Build and run the tests for osquery if SKIP_TESTS isn't defined
 if defined SKIP_TESTS goto end
-for %%t in (osquery_tests,osquery_additional_tests,osquery_tables_tests) do (
+for %%t in (osquery_tests,osquery_additional_tests,osquery_tables_tests,example_extension) do (
   cmake --build . --target %%t --config %rel% -- /verbosity:minimal /maxcpucount
   if errorlevel 1 goto end
 )
