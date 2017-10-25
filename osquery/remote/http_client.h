@@ -468,5 +468,5 @@ class HTTP_Response<T>::Headers {
  private:
   T* resp_;
 };
-}
-}
+} // namespace http
+} // namespace osquery
