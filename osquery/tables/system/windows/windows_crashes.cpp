@@ -29,6 +29,8 @@
 #include <osquery/sql.h>
 #include <osquery/tables.h>
 
+#include "osquery/core/process.h"
+#include "osquery/core/conversions.h"
 #include "osquery/core/windows/wmi.h"
 
 namespace alg = boost::algorithm;
@@ -37,20 +39,12 @@ namespace fs = boost::filesystem;
 namespace osquery {
 namespace tables {
 
-const std::string kLocalDumpsRegKey =
-    "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\Windows Error "
-    "Reporting\\LocalDumps";
-const std::string kDumpFolderRegPath = kLocalDumpsRegKey + "\\DumpFolder";
-const std::string kFallbackFolder = "%TMP%";
-const std::string kDumpFileExtension = ".dmp";
+const std::string kLocalDumpsRegKey = "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\Windows Error Reporting\\LocalDumps\\DumpFolder";
 const std::string kSymbolPath =
     "C:\\ProgramData\\dbg\\sym;"
     "cache*C:\\ProgramData\\dbg\\sym;"
     "srv*C:\\ProgramData\\dbg\\sym*https://msdl.microsoft.com/download/symbols";
-const unsigned long kSymbolOptions =
-    SYMOPT_CASE_INSENSITIVE & SYMOPT_UNDNAME & SYMOPT_LOAD_LINES &
-    SYMOPT_OMAP_FIND_NEAREST & SYMOPT_LOAD_ANYTHING &
-    SYMOPT_FAIL_CRITICAL_ERRORS & SYMOPT_AUTO_PUBLICS;
+
 const unsigned long kNumStackFramesToLog = 10;
 const std::map<unsigned long long, std::string> kMinidumpTypeFlags = {
     {0x00000000, "MiniDumpNormal"},
@@ -258,83 +252,77 @@ Status logDumpType(IDebugControl5* control, Row& r) {
     return Status(1);
   }
 
-  std::ostringstream activeFlags;
-  bool firstString = true;
   // Loop through MINIDUMP_TYPE flags and log the ones that are set
+  std::vector<std::string> activeFlags;
   for (auto const& flag : kMinidumpTypeFlags) {
     if (flags & flag.first) {
-      if (!firstString) {
-        activeFlags << ",";
-      }
-      firstString = false;
-      activeFlags << flag.second;
+      activeFlags.push_back(flag.second);
     }
   }
-  r["type"] = activeFlags.str();
+  r["type"] = osquery::join(activeFlags, ",");
   return Status();
 }
 
 // Note: appears to only detect unmanaged stack frames.
 // See http://blog.steveniemitz.com/building-a-mixed-mode-stack-walker-part-2/
 Status logStackTrace(IDebugControl5* control, IDebugSymbols3* symbols, Row& r) {
-  CONTEXT context = {0};
+  CONTEXT context = { 0 };
   unsigned long type = 0;
   unsigned long procID = 0;
   unsigned long threadID = 0;
   unsigned long contextSize = 0;
   unsigned long numFrames = 0;
-  DEBUG_STACK_FRAME_EX stackFrames[kNumStackFramesToLog] = {0};
+  DEBUG_STACK_FRAME_EX stackFrames[kNumStackFramesToLog] = { 0 };
 
   // Get stack frames, either with or without event context
   if (control->GetStoredEventInformation(&type,
-                                         &procID,
-                                         &threadID,
-                                         &context,
-                                         sizeof(context),
-                                         &contextSize,
-                                         nullptr,
-                                         0,
-                                         0) == S_OK) {
+    &procID,
+    &threadID,
+    &context,
+    sizeof(context),
+    &contextSize,
+    nullptr,
+    0,
+    0) == S_OK) {
     symbols->SetScopeFromStoredEvent();
     if (control->GetContextStackTraceEx(&context,
-                                        contextSize,
-                                        stackFrames,
-                                        kNumStackFramesToLog,
-                                        nullptr,
-                                        0,
-                                        0,
-                                        &numFrames) != S_OK) {
+      contextSize,
+      stackFrames,
+      kNumStackFramesToLog,
+      nullptr,
+      0,
+      0,
+      &numFrames) != S_OK) {
       return Status(1);
     }
-  } else {
-    if (control->GetStackTraceEx(
-            0, 0, 0, stackFrames, kNumStackFramesToLog, &numFrames) != S_OK) {
-      return Status(1);
-    }
+  }
+  else if (control->GetStackTraceEx(
+    0, 0, 0, stackFrames, kNumStackFramesToLog, &numFrames) != S_OK) {
+    return Status(1);
   }
 
   // Then, log the stack frames
-  std::ostringstream stackTrace;
-  auto firstFrame = true;
+  std::vector<std::string> stackTraces;
+  std::vector<char> name(512, 0x0);
+  std::ostringstream trace;
+  unsigned long long offset = 0;
   for (unsigned long frame = 0; frame < numFrames; frame++) {
-    char name[512] = {0};
-    unsigned long long offset = 0;
-
-    if (!firstFrame) {
-      stackTrace << ",";
-    }
-    firstFrame = false;
     if (symbols->GetNameByOffset(stackFrames[frame].InstructionOffset,
-                                 name,
-                                 ARRAYSIZE(name) - 1,
-                                 nullptr,
-                                 &offset) == S_OK) {
-      stackTrace << name << "+0x" << std::hex << offset;
+      name.data(),
+      static_cast<unsigned long>(name.size() - 1),
+      nullptr,
+      &offset) == S_OK) {
+      trace << name.data() << "+0x" << std::hex << offset;
     }
-    stackTrace << "(0x" << std::hex << stackFrames[frame].InstructionOffset;
-    stackTrace << ")";
+
+    trace << "(0x" << std::hex << stackFrames[frame].InstructionOffset;
+    trace << ")";
+    stackTraces.push_back(trace.str());
+    name.clear();
+    trace.clear();
   }
-  r["stack_trace"] = stackTrace.str();
+
+  r["stack_trace"] = osquery::join(stackTraces, ",");
   return Status();
 }
 
@@ -440,6 +428,7 @@ Status logPEBInfo(IDebugClient5* client,
        S_OK)) {
     return Status(1);
   }
+
   // Get address of ProcessParameters struct
   unsigned long long procParamsAddr = 0;
   if (data->ReadPointersVirtual(
@@ -458,6 +447,7 @@ Status logPEBInfo(IDebugClient5* client,
        S_OK)) {
     return Status(1);
   }
+
   // Log CurrentDirectory
   unsigned long long curDirBufferAddr = 0;
   if (data->ReadPointersVirtual(
@@ -475,6 +465,7 @@ Status logPEBInfo(IDebugClient5* client,
           ntdllBase, procParamsTypeId, "CommandLine", &cmdLineOffset) != S_OK) {
     return Status(1);
   }
+
   // Log CommandLine
   unsigned long long cmdLineBufferAddr = 0;
   if (data->ReadPointersVirtual(1,
@@ -496,20 +487,22 @@ Status logPEBInfo(IDebugClient5* client,
           ntdllBase, procParamsTypeId, "Environment", &envOffset) != S_OK) {
     return Status(1);
   }
+
   // Get Environment
   unsigned long long envBufferAddr = 0;
   if (data->ReadPointersVirtual(
           1, procParamsAddr + envOffset, &envBufferAddr) != S_OK) {
     return Status(1);
   }
+
   // Loop through environment variables and log those of interest
   // The environment variables are stored in the following format:
   // Var1=Value1\0Var2=Value2\0Var3=Value3\0 ... VarN=ValueN\0\0
   wchar_t env[UNICODE_STRING_MAX_BYTES] = {0};
   unsigned long bytesRead = 0;
-  data->ReadUnicodeStringVirtualWide(
+  auto ret = data->ReadUnicodeStringVirtualWide(
       envBufferAddr, sizeof(env), env, UNICODE_STRING_MAX_BYTES, &bytesRead);
-  while (bytesRead > sizeof(wchar_t)) {
+  while (ret == S_OK) {
     envBufferAddr += bytesRead;
     auto envVar = wstringToString(env);
     auto pos = envVar.find('=');
@@ -522,13 +515,11 @@ Status logPEBInfo(IDebugClient5* client,
       r["username"] = varValue;
     }
 
-    if (data->ReadUnicodeStringVirtualWide(envBufferAddr,
+    ret = data->ReadUnicodeStringVirtualWide(envBufferAddr,
                                            sizeof(env),
                                            env,
                                            UNICODE_STRING_MAX_BYTES,
-                                           &bytesRead) != S_OK) {
-      break;
-    }
+      &bytesRead);
   }
 
   return Status();
@@ -599,8 +590,13 @@ void processDebugEngine(const char* fileName, Row& r) {
   }
 
   // Initialize debug engine
+  unsigned long symoptions =
+    SYMOPT_CASE_INSENSITIVE & SYMOPT_UNDNAME & SYMOPT_LOAD_LINES &
+    SYMOPT_OMAP_FIND_NEAREST & SYMOPT_LOAD_ANYTHING &
+    SYMOPT_FAIL_CRITICAL_ERRORS & SYMOPT_AUTO_PUBLICS;
+
   if ((symbols->SetSymbolPath(kSymbolPath.c_str()) != S_OK) ||
-      (symbols->SetSymbolOptions(kSymbolOptions) != S_OK) ||
+      (symbols->SetSymbolOptions(symoptions) != S_OK) ||
       (client->OpenDumpFile(fileName) != S_OK) ||
       (control->WaitForEvent(DEBUG_WAIT_DEFAULT, INFINITE) != S_OK)) {
     LOG(ERROR) << "Failed during initialization while debugging crash dump: "
@@ -630,33 +626,32 @@ void processDebugEngine(const char* fileName, Row& r) {
 
 QueryData genCrashLogs(QueryContext& context) {
   QueryData results;
-  std::string dumpFolderLocation;
+  std::string dumpFileExtension = ".dmp";
 
   // Query registry for crash dump folder
-  std::string dumpFolderQuery = "SELECT data FROM registry WHERE key = \"" +
-                                kLocalDumpsRegKey + "\" AND path = \"" +
-                                kDumpFolderRegPath + "\"";
+  std::string dumpFolderQuery = "SELECT data FROM registry WHERE path = \"" +
+                                kLocalDumpsRegKey + "\"";
   SQL dumpFolderResults(dumpFolderQuery);
-  dumpFolderLocation = dumpFolderResults.rows().empty()
-                           ? kFallbackFolder
-                           : dumpFolderResults.rows()[0].at("data");
+  std::string dumpFolderLocation{ "" };
+  if (!dumpFolderResults.rows().empty()) {
+    dumpFolderLocation = dumpFolderResults.rows()[0].at("data");
+  }
+  else {
+    auto tempDumpLoc = getEnvVar("TMP");
+    dumpFolderLocation = tempDumpLoc.is_initialized() ? *tempDumpLoc : "";
+  }
 
-  // Fill in any environment variables
-  char expandedDumpFolderLocation[MAX_PATH];
-  ExpandEnvironmentStrings(
-      dumpFolderLocation.c_str(), expandedDumpFolderLocation, MAX_PATH);
-
-  if (!fs::exists(expandedDumpFolderLocation) ||
-      !fs::is_directory(expandedDumpFolderLocation)) {
+  if (!fs::exists(dumpFolderLocation) ||
+    !fs::is_directory(dumpFolderLocation)) {
     LOG(ERROR) << "No crash dump directory found";
     return results;
   }
 
   // Enumerate and process crash dumps
   std::vector<std::string> files;
-  if (listFilesInDirectory(expandedDumpFolderLocation, files)) {
+  if (listFilesInDirectory(dumpFolderLocation, files)) {
     for (const auto& lf : files) {
-      if (alg::iends_with(lf, kDumpFileExtension) && fs::is_regular_file(lf)) {
+      if (alg::iends_with(lf, dumpFileExtension) && fs::is_regular_file(lf)) {
         Row r;
         processDebugEngine(lf.c_str(), r);
         if (!r.empty()) {
