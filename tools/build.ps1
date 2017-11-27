@@ -134,7 +134,8 @@ function Invoke-OsqueryMsbuild {
     "$rel",
     '--output-on-failure'
   )
-  $err = Start-OsqueryProcess $ctest $ctestArgs $false
+  #$err = Start-OsqueryProcess $ctest $ctestArgs $false
+  ctest -C Release --output-on-failure
 }
 
 # A function for running cmake to generate the osquery solution,
