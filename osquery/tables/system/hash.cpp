@@ -124,6 +124,7 @@ MultiHashes hashMultiFromFile(int mask, const std::string& path) {
       {HASH_TYPE_SHA256, std::make_shared<Hash>(HASH_TYPE_SHA256)},
   };
 
+  auto is_async = isPlatform(PlatformType::TYPE_WINDOWS) ? true : false;
   auto s = readFile(path,
                     0,
                     HASH_CHUNK_SIZE,
@@ -136,7 +137,7 @@ MultiHashes hashMultiFromFile(int mask, const std::string& path) {
                         }
                       }
                     }),
-                    true);
+                    is_async);
 
   MultiHashes mh = {};
   if (!s.ok()) {
