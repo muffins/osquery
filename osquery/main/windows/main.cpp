@@ -20,6 +20,7 @@
 #include <osquery/logger.h>
 #include <osquery/system.h>
 
+#include "osquery/core/process.h"
 #include "osquery/main/main.h"
 
 DECLARE_string(flagfile);
@@ -32,6 +33,10 @@ static const std::string kServiceDisplayName{"osquery daemon service"};
 
 static SERVICE_STATUS_HANDLE kStatusHandle = nullptr;
 static SERVICE_STATUS kServiceStatus = {0};
+
+// The maximum amount of time in milliseconds to wait for the service to end
+const size_t kMaxServiceWaitTime = 1000;
+const size_t kMaxShutdownAttempts = 3;
 
 /*
  * This event is set when a SERVICE_CONTROL_STOP or SERVICE_CONTROL_SHUTDOWN
@@ -79,11 +84,15 @@ HANDLE getStopEvent() {
 static void UpdateServiceStatus(DWORD controls,
                                 DWORD state,
                                 DWORD exit_code,
-                                DWORD checkpoint) {
+                                DWORD checkpoint,
+                                DWORD hint = 0) {
   kServiceStatus.dwControlsAccepted = controls;
   kServiceStatus.dwCurrentState = state;
   kServiceStatus.dwWin32ExitCode = exit_code;
   kServiceStatus.dwCheckPoint = checkpoint;
+  if (hint != 0) {
+    kServiceStatus.dwWaitHint = hint;
+  }
 
   if (!::SetServiceStatus(kStatusHandle, &kServiceStatus)) {
     SLOG("SetServiceStatus failed (lasterror=" +
@@ -102,7 +111,8 @@ static auto kShutdownCallable = ([]() {
   if (stopEvent != nullptr) {
     // Wait forever, until the service handler signals us
     ::WaitForSingleObject(stopEvent, INFINITE);
-    // Interup the worker service threads before joining
+
+    // Interupt the worker service threads before joining
     Dispatcher::stopServices();
     auto ret = ::CloseHandle(stopEvent);
     if (ret != TRUE) {
@@ -305,8 +315,7 @@ void WINAPI ServiceControlHandler(DWORD control_code) {
     if (kServiceStatus.dwCurrentState != SERVICE_RUNNING) {
       break;
     }
-
-    UpdateServiceStatus(0, SERVICE_STOP_PENDING, 0, 3);
+    UpdateServiceStatus(0, SERVICE_STOP_PENDING, 0, 3, kMaxServiceWaitTime);
     {
       auto stopEvent = osquery::getStopEvent();
       if (stopEvent != nullptr) {
@@ -316,6 +325,13 @@ void WINAPI ServiceControlHandler(DWORD control_code) {
                ")");
         }
         CloseHandle(stopEvent);
+      }
+      // Ensure the dispatcher shuts down all threads before terminating
+      auto& dispatch = Dispatcher::instance();
+      size_t cnt = 1;
+      while (dispatch.serviceCount() > 0 && cnt <= kMaxShutdownAttempts) {
+        osquery::sleepFor(100 * cnt);
+        cnt++;
       }
     }
     UpdateServiceStatus(0, SERVICE_STOPPED, 0, 4);

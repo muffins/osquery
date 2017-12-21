@@ -240,7 +240,7 @@ class Dispatcher : private boost::noncopyable {
    * a join has completed of existing services.
    *
    * This prevents a very strange race where the dispatcher is signaled to
-   * abort or interrupt and serviced are sill waiting to be added.
+   * abort or interrupt and services are sill waiting to be added.
    * A future join will be requested AFTER all services were expected to have
    * been interrupted.
    */
