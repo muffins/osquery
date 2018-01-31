@@ -170,7 +170,7 @@ class PlatformProcess : private boost::noncopyable {
    * script arguments. This is used within the test harnesses to run example
    * TLS server scripts.
    */
-  static std::shared_ptr<PlatformProcess> launchTestPythonScript(
+  static std::shared_ptr<PlatformProcess> launchPythonScript(
       const std::string& args);
 
  private:

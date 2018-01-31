@@ -297,7 +297,7 @@ std::shared_ptr<PlatformProcess> PlatformProcess::launchExtension(
   return process;
 }
 
-std::shared_ptr<PlatformProcess> PlatformProcess::launchTestPythonScript(
+std::shared_ptr<PlatformProcess> PlatformProcess::launchPythonScript(
     const std::string& args) {
   STARTUPINFOA si = {0};
   PROCESS_INFORMATION pi = {nullptr};

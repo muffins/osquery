@@ -109,6 +109,16 @@ inline void replaceAll(std::string& str,
 std::string join(const std::vector<std::string>& s, const std::string& tok);
 
 /**
+ * @brief Join a set of strings inserting a token string between elements
+ *
+ * @param s the set of strings to be joined.
+ * @param tok a token glue string to be inserted between elements.
+ *
+ * @return the joined string.
+ */
+std::string join(const std::set<std::string>& s, const std::string& tok);
+
+/**
  * @brief Decode a base64 encoded string.
  *
  * @param encoded The encode base64 string.
