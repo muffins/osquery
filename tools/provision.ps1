@@ -357,8 +357,9 @@ function Install-ThirdParty {
     "rocksdb.5.7.1-r1",
     "thrift-dev.0.11.0",
     "zlib.1.2.8",
-    "rapidjson.1.1.0"
-    "zstd.1.2.0-r3"
+    "rapidjson.1.1.0",
+    "zstd.1.2.0-r3",
+    "yara.3.5.0"
   )
   $tmpDir = Join-Path $env:TEMP 'osquery-packages'
   Remove-Item $tmpDir -Recurse -ErrorAction Ignore
@@ -460,6 +461,7 @@ function Main {
   $out = Install-ChocoPackage 'vswhere'
   $out = Install-ChocoPackage 'cmake.portable'
   $out = Install-ChocoPackage 'windows-sdk-10.0'
+  $out = Install-ChocoPackage 'nuget.commandline'
 
   # Only install python if it's not needed
   $pythonInstall = Test-PythonInstalled
