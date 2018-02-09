@@ -32,6 +32,8 @@ import utils
 # TODO: Find an implementation that will work for Windows, for now, disable.
 # https://goo.gl/T4AgV5
 if os.name == "nt":
+    # We leverage our own TPipe python implementation
+    import TPipe
     # We redefine timeout_decorator on windows
     class timeout_decorator:
         @staticmethod
@@ -445,7 +447,12 @@ class EXClient(object):
         self.path = path
         if uuid:
             self.path += ".%s" % str(uuid)
-        transport = TSocket.TSocket(unix_socket=self.path)
+
+        if sys.platform == "win32":
+            transport = TPipe.TPipe(pipeName=self.path)
+        else:
+            transport = TSocket.TSocket(unix_socket=self.path)
+
         transport = TTransport.TBufferedTransport(transport)
         self.protocol = TBinaryProtocol.TBinaryProtocol(transport)
         self.transport = transport
@@ -460,21 +467,23 @@ class EXClient(object):
         if self.transport:
             self.transport.close()
 
-    def try_open(self, timeout=0.1, interval=0.01):
+    def try_open(self, timeout=1, interval=0.1):
         '''Try to open, on success, close the UNIX domain socket.'''
         did_open = self.open(timeout, interval)
         if did_open:
             self.close()
         return did_open
 
-    def open(self, timeout=0.1, interval=0.01):
+    def open(self, timeout=1, interval=0.1):
         '''Attempt to open the UNIX domain socket.'''
         delay = 0
         while delay < timeout:
             try:
+                print('[+] Attempting to open connection to {}'.format(self.path))
                 self.transport.open()
                 return True
             except Exception as e:
+                print('[-] Exception open transport: {}'.format(e))
                 pass
             delay += interval
             time.sleep(interval)

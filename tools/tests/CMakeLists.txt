@@ -13,9 +13,9 @@ if(NOT DEFINED ENV{SANITIZE})
 endif()
 
 ADD_OSQUERY_PYTHON_TEST(test_osqueryd test_osqueryd.py)
-if(NOT WINDOWS)
-  ADD_OSQUERY_PYTHON_TEST(test_additional test_additional.py)
+ADD_OSQUERY_PYTHON_TEST(test_additional test_additional.py)
 
+if(NOT WINDOWS)
   if(NOT DEFINED ENV{SANITIZE})
     # Too many FATAL's: failed to intercept strlen
     ADD_OSQUERY_PYTHON_TEST(test_extensions test_extensions.py)
