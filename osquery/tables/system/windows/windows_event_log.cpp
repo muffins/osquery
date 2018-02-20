@@ -27,9 +27,12 @@ void parseQueryResults(EVT_HANDLE& queryResults, QueryData& results) {
   std::vector<EVT_HANDLE> events(kNumEventsBlock);
   unsigned long numEvents = 0;
 
+  // Retrieve the Event logs one block at a time until there's no events returned
   auto ret = EvtNext(
       queryResults, kNumEventsBlock, events.data(), INFINITE, 0, &numEvents);
+
   while (ret != FALSE) {
+
     for (unsigned long i = 0; i < numEvents; i++) {
       // Do a think with the event...
       std::vector<char> renderedContent;
@@ -43,6 +46,7 @@ void parseQueryResults(EVT_HANDLE& queryResults, QueryData& results) {
                       renderedContent.data(),
                       &renderedBuffUsed,
                       &propCount);
+
       if (GetLastError() == ERROR_INSUFFICIENT_BUFFER) {
         renderedBuffSize = renderedBuffUsed;
         renderedContent.resize(renderedBuffSize);
@@ -61,8 +65,12 @@ void parseQueryResults(EVT_HANDLE& queryResults, QueryData& results) {
       }
 
       Row r;
+
+      
       r["data"] = wstringToString(
           std::wstring(renderedContent.begin(), renderedContent.end()).c_str());
+
+
       results.push_back(r);
 
       EvtClose(events[i]);
