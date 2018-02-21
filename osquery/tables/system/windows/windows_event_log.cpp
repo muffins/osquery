@@ -40,55 +40,59 @@ void parseWelXml(std::string& xml, Row& r) {
   r["level"] = system->first_node("Level")->value();
   r["keywords"] = system->first_node("Keywords")->value();
   r["provider_name"] =
-      system->first_node("Provider")->first_attribute("Name")->value();
+      system->first_node("Provider")->first_attribute("Name") == nullptr
+          ? ""
+          : system->first_node("Provider")->first_attribute("Name")->value();
   r["provider_guid"] =
-      system->first_node("Provider")->first_attribute("Guid")->value();
+      system->first_node("Provider")->first_attribute("Guid") == nullptr
+          ? ""
+          : system->first_node("Provider")->first_attribute("Guid")->value();
 
   // Next parse the event data fields
+  /*
   std::map<std::string, std::string> data;
   auto eventData = root->first_node("EventData");
   for (xml_node<>* node = eventData->first_node("Data"); node;
        node = node->next_sibling()) {
     data[node->first_attribute("Name")->value()] = node->value();
   }
+  // TODO: get data
+  */
 }
 
 void parseQueryResults(EVT_HANDLE& queryResults, QueryData& results) {
   // Parse the results
-  // EVT_HANDLE hEvents[1024];
   std::vector<EVT_HANDLE> events(kNumEventsBlock);
   unsigned long numEvents = 0;
 
-  // Retrieve the Event logs one block at a time until there's no events
-  // returned
+  // Retrieve the events one block at a time
   auto ret = EvtNext(
       queryResults, kNumEventsBlock, events.data(), INFINITE, 0, &numEvents);
 
   while (ret != FALSE) {
     for (unsigned long i = 0; i < numEvents; i++) {
-      // Do a think with the event...
-      std::vector<char> renderedContent;
+      std::vector<wchar_t> renderedContent;
       unsigned long renderedBuffSize = 0;
       unsigned long renderedBuffUsed = 0;
       unsigned long propCount = 0;
-      ret = EvtRender(nullptr,
-                      events[i],
-                      EvtRenderEventXml,
-                      renderedBuffSize,
-                      renderedContent.data(),
-                      &renderedBuffUsed,
-                      &propCount);
+      EvtRender(nullptr,
+                events[i],
+                EvtRenderEventXml,
+                renderedBuffSize,
+                renderedContent.data(),
+                &renderedBuffUsed,
+                &propCount);
 
       if (GetLastError() == ERROR_INSUFFICIENT_BUFFER) {
         renderedBuffSize = renderedBuffUsed;
         renderedContent.resize(renderedBuffSize);
-        ret = EvtRender(nullptr,
-                        events[i],
-                        EvtRenderEventXml,
-                        renderedBuffSize,
-                        renderedContent.data(),
-                        &renderedBuffUsed,
-                        &propCount);
+        EvtRender(nullptr,
+                  events[i],
+                  EvtRenderEventXml,
+                  renderedBuffSize,
+                  renderedContent.data(),
+                  &renderedBuffUsed,
+                  &propCount);
       }
       if (GetLastError() != ERROR_SUCCESS) {
         LOG(WARNING) << "Failed to render windows event with "
@@ -97,9 +101,7 @@ void parseQueryResults(EVT_HANDLE& queryResults, QueryData& results) {
       }
 
       Row r;
-      auto xml = wstringToString(
-          std::wstring(renderedContent.begin(), renderedContent.end()).c_str());
-
+      auto xml = wstringToString(renderedContent.data());
       parseWelXml(xml, r);
 
       results.push_back(r);
@@ -115,7 +117,6 @@ void parseQueryResults(EVT_HANDLE& queryResults, QueryData& results) {
 QueryData genWindowsEventLog(QueryContext& context) {
   QueryData results;
 
-  // TODO: Get the channel from the user
   if (!context.hasConstraint("source", EQUALS)) {
     LOG(WARNING) << "must specify the event log source to search";
     return {};
