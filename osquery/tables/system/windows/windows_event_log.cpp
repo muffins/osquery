@@ -16,7 +16,9 @@
 #include <osquery/logger.h>
 #include <osquery/tables.h>
 
+#include "osquery/core/json.h"
 #include "osquery/core/windows/wmi.h"
+#include "osquery/filesystem/fileops.h"
 
 // TODO: Clean this shit up.
 using namespace rapidxml;
@@ -26,6 +28,19 @@ namespace tables {
 
 const int kNumEventsBlock = 1024;
 
+void parseSystemTimeString(const std::string& time, SYSTEMTIME& st) {
+  // Date string should be "yyyy-MM-dd hh:mm"
+  sscanf_s(time.c_str(),
+           "%d-%d-%dT%d:%d:%d.%dZ",
+           &st.wYear,
+           &st.wMonth,
+           &st.wDay,
+           &st.wHour,
+           &st.wMinute,
+           &st.wSecond,
+           &st.wMilliseconds);
+}
+
 void parseWelXml(std::string& xml, Row& r) {
   xml_document<char> doc;
   doc.parse<0>(&xml[0]);
@@ -34,30 +49,80 @@ void parseWelXml(std::string& xml, Row& r) {
   // First parse the system details
   xml_node<>* system = root->first_node("System");
 
-  r["eventid"] = system->first_node("EventID")->value();
-  r["task"] = system->first_node("Task")->value();
-  r["source"] = system->first_node("Channel")->value();
-  r["level"] = system->first_node("Level")->value();
-  r["keywords"] = system->first_node("Keywords")->value();
-  r["provider_name"] =
-      system->first_node("Provider")->first_attribute("Name") == nullptr
-          ? ""
-          : system->first_node("Provider")->first_attribute("Name")->value();
-  r["provider_guid"] =
-      system->first_node("Provider")->first_attribute("Guid") == nullptr
-          ? ""
-          : system->first_node("Provider")->first_attribute("Guid")->value();
+  // All event records should have an EventID
+  r["eventid"] = system->first_node("EventID") != nullptr
+                     ? system->first_node("EventID")->value()
+                     : "-1";
+
+  FILETIME locft;
+  std::string sysTime{""};
+  if (system->first_node("TimeCreated") != nullptr &&
+      system->first_node("TimeCreated")->first_attribute("SystemTime") !=
+          nullptr) {
+    sysTime = system->first_node("TimeCreated") != nullptr &&
+              system->first_node("TimeCreated")
+                  ->first_attribute("SystemTime")
+                  ->value();
+    SYSTEMTIME st;
+    FILETIME ft;
+    parseSystemTimeString(sysTime, st);
+    SystemTimeToFileTime(&st, &ft);
+    FileTimeToLocalFileTime(&ft, &locft);
+  }
+  r["time"] = sysTime.empty() ? -1 : BIGINT(filetimeToUnixtime(locft));
+
+  r["task"] = system->first_node("Task") != nullptr
+                  ? system->first_node("Task")->value()
+                  : "-1";
+  r["source"] = system->first_node("Channel") != nullptr
+                    ? system->first_node("Channel")->value()
+                    : "-1";
+  r["level"] = system->first_node("Level") != nullptr
+                   ? system->first_node("Level")->value()
+                   : "-1";
+  r["keywords"] = system->first_node("Keywords") != nullptr
+                      ? system->first_node("Keywords")->value()
+                      : "-1";
+
+  if (system->first_node("Provider") != nullptr) {
+    r["provider_name"] =
+        system->first_node("Provider")->first_attribute("Name") == nullptr
+            ? ""
+            : system->first_node("Provider")->first_attribute("Name")->value();
+    r["provider_guid"] =
+        system->first_node("Provider")->first_attribute("Guid") == nullptr
+            ? ""
+            : system->first_node("Provider")->first_attribute("Guid")->value();
+  } else {
+    r["provider_name"] = "-1";
+    r["provider_guid"] = "-1";
+  }
+
+  if (system->first_node("Execution") != nullptr) {
+    r["pid"] =
+        system->first_node("Execution")->first_attribute("ProcessID") == nullptr
+            ? ""
+            : system->first_node("Execution")
+                  ->first_attribute("ProcessID")
+                  ->value();
+    r["tid"] =
+        system->first_node("Execution")->first_attribute("ThreadID") == nullptr
+            ? ""
+            : system->first_node("Execution")
+                  ->first_attribute("ThreadID")
+                  ->value();
+  } else {
+    r["pid"] = "-1";
+    r["tid"] = "-1";
+  }
 
   // Next parse the event data fields
-  /*
   std::map<std::string, std::string> data;
   auto eventData = root->first_node("EventData");
-  for (xml_node<>* node = eventData->first_node("Data"); node;
+  for (xml_node<>* node = eventData->first_node(); node;
        node = node->next_sibling()) {
-    data[node->first_attribute("Name")->value()] = node->value();
+    data[node->name()] = node->value();
   }
-  // TODO: get data
-  */
 }
 
 void parseQueryResults(EVT_HANDLE& queryResults, QueryData& results) {

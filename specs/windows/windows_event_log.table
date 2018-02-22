@@ -1,8 +1,7 @@
 table_name("windows_event_log")
 description("Table for searching all recorded Windows event logs.")
 schema([
-    Column("time", BIGINT, "Timestamp the event was received"),
-    Column("datetime", TEXT, "System time at which the event occurred"),
+    Column("time", BIGINT, "Unix timestamp when the event occurred on the system"),
     Column("source", TEXT, "Source or channel of the event"),
     Column("provider_name", TEXT, "Provider name of the event"),
     Column("provider_guid", TEXT, "Provider guid of the event"),
@@ -11,6 +10,8 @@ schema([
     Column("level", INTEGER, "The severity level associated with the event"),
     Column("keywords", BIGINT, "A bitmask of the keywords defined in the event"),
     Column("data", TEXT, "Data associated with the event"),
+    Column("pid", INTEGER, "Process ID which emitted the event record"),
+    Column("tid", INTEGER, "Thread ID which emitted the event record"),
     Column("eid", TEXT, "Event ID", hidden=True),
 ])
 implementation("windows_event_log@genWindowsEventLog")
