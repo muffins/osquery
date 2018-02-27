@@ -1,7 +1,7 @@
 table_name("windows_event_log")
 description("Table for searching all recorded Windows event logs.")
 schema([
-    Column("time", BIGINT, "Unix timestamp when the event occurred on the system"),
+    Column("time", TEXT, "System time at which the event occurred"),
     Column("source", TEXT, "Source or channel of the event"),
     Column("provider_name", TEXT, "Provider name of the event"),
     Column("provider_guid", TEXT, "Provider guid of the event"),
@@ -16,5 +16,6 @@ schema([
 ])
 implementation("windows_event_log@genWindowsEventLog")
 examples([
-  "select * from windows_event_log where eventid=4104 and channel='Security' and timestamp > 1518820099",
+  "select * from windows_event_log where source='Security' and eventid=4104 and time like '2018-03-15%'",
+  "select * from windows_event_log where source='Security' and eventid=4688 and time like '2018-03-15%'",
 ])

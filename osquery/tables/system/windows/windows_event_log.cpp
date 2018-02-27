@@ -16,6 +16,7 @@
 #include <osquery/logger.h>
 #include <osquery/tables.h>
 
+#include "osquery/core/conversions.h"
 #include "osquery/core/json.h"
 #include "osquery/core/windows/wmi.h"
 #include "osquery/filesystem/fileops.h"
@@ -27,19 +28,6 @@ namespace osquery {
 namespace tables {
 
 const int kNumEventsBlock = 1024;
-
-void parseSystemTimeString(const std::string& time, SYSTEMTIME& st) {
-  // Date string should be "yyyy-MM-dd hh:mm"
-  sscanf_s(time.c_str(),
-           "%d-%d-%dT%d:%d:%d.%dZ",
-           &st.wYear,
-           &st.wMonth,
-           &st.wDay,
-           &st.wHour,
-           &st.wMinute,
-           &st.wSecond,
-           &st.wMilliseconds);
-}
 
 void parseWelXml(std::string& xml, Row& r) {
   xml_document<char> doc;
@@ -54,22 +42,15 @@ void parseWelXml(std::string& xml, Row& r) {
                      ? system->first_node("EventID")->value()
                      : "-1";
 
-  FILETIME locft;
   std::string sysTime{""};
   if (system->first_node("TimeCreated") != nullptr &&
       system->first_node("TimeCreated")->first_attribute("SystemTime") !=
           nullptr) {
-    sysTime = system->first_node("TimeCreated") != nullptr &&
-              system->first_node("TimeCreated")
+    sysTime = system->first_node("TimeCreated")
                   ->first_attribute("SystemTime")
                   ->value();
-    SYSTEMTIME st;
-    FILETIME ft;
-    parseSystemTimeString(sysTime, st);
-    SystemTimeToFileTime(&st, &ft);
-    FileTimeToLocalFileTime(&ft, &locft);
   }
-  r["time"] = sysTime.empty() ? -1 : BIGINT(filetimeToUnixtime(locft));
+  r["time"] = sysTime.empty() ? "-1" : sysTime;
 
   r["task"] = system->first_node("Task") != nullptr
                   ? system->first_node("Task")->value()
@@ -80,10 +61,13 @@ void parseWelXml(std::string& xml, Row& r) {
   r["level"] = system->first_node("Level") != nullptr
                    ? system->first_node("Level")->value()
                    : "-1";
-  r["keywords"] = system->first_node("Keywords") != nullptr
-                      ? system->first_node("Keywords")->value()
-                      : "-1";
 
+  unsigned long long keywords = 0;
+  if (system->first_node("Keywords") != nullptr) {
+    safeStrtoull(system->first_node("Keywords")->value(), 10, keywords);
+  } 
+  r["keywords"] = BIGINT(keywords);
+  
   if (system->first_node("Provider") != nullptr) {
     r["provider_name"] =
         system->first_node("Provider")->first_attribute("Name") == nullptr
@@ -119,10 +103,21 @@ void parseWelXml(std::string& xml, Row& r) {
   // Next parse the event data fields
   std::map<std::string, std::string> data;
   auto eventData = root->first_node("EventData");
+  unsigned int cnt = 0;
   for (xml_node<>* node = eventData->first_node(); node;
        node = node->next_sibling()) {
-    data[node->name()] = node->value();
+    if (node->first_attribute("Name") == nullptr) {
+      // In the event the log has no labeling for event data, we generate a label
+      // similar to how Windows labels data values, paramX
+      LOG(WARNING) << "Generating data label for Event Data child with no name";
+      data["param" + std::to_string(cnt)] = node->value();
+      cnt++;
+    } else {
+      data[node->first_attribute("Name")->value()] = node->value();
+    }
+    
   }
+  r["data"] = "";
 }
 
 void parseQueryResults(EVT_HANDLE& queryResults, QueryData& results) {
@@ -188,16 +183,14 @@ QueryData genWindowsEventLog(QueryContext& context) {
   }
 
   auto channels = context.constraints["source"].getAll(EQUALS);
-
-  // TODO Get all other constraints given by the user
-  std::wstring searchQuery = L"*";
-  // context.hasConstraint("key", EQUALS)
+  auto eids = context.constraints["eventid"].getAll(EQUALS);
 
   for (const auto& channel : channels) {
+    std::string searchQuery = "Event/" + channel + "[" + osquery::join(eids, "|") + "]";
     auto queryResults =
         EvtQuery(nullptr,
                  stringToWstring(channel).c_str(),
-                 searchQuery.c_str(),
+                 stringToWstring(searchQuery).c_str(),
                  EvtQueryChannelPath | EvtQueryReverseDirection);
     if (queryResults == nullptr) {
       LOG(WARNING) << "Failed to search event log for query with "

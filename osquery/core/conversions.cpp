@@ -406,9 +406,7 @@ std::string join(const std::vector<std::string>& s, const std::string& tok) {
 }
 
 std::string join(const std::set<std::string>& s, const std::string& tok) {
-  std::vector<std::string> toJoin;
-  toJoin.insert(toJoin.end(), s.begin(), s.end());
-  return boost::algorithm::join(toJoin, tok);
+  return boost::algorithm::join(s, tok);
 }
 
 std::string getBufferSHA1(const char* buffer, size_t size) {
