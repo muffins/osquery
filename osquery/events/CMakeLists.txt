@@ -31,9 +31,13 @@ elseif(FREEBSD)
   # no files for FREEBSD
 elseif(WINDOWS)
   ADD_OSQUERY_LINK_CORE("wevtapi.lib")
+  ADD_OSQUERY_LINK_CORE("tdh.lib")
+
   ADD_OSQUERY_LIBRARY(FALSE osquery_events_windows 
     "${CMAKE_CURRENT_LIST_DIR}/windows/windows_event_log.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/windows/windows_event_log.h"
+    "${CMAKE_CURRENT_LIST_DIR}/windows/windows_etw.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/windows/windows_etw.h"
   )
 else()
   ADD_OSQUERY_LINK_ADDITIONAL("udev")

@@ -9,9 +9,12 @@
  */
 
 #define _WIN32_DCOM
+#define INITGUID
 
-#include <Windows.h>
-#include <Evntrace.h>
+#include <windows.h>
+#include <evntrace.h>
+#include <evntcons.h>
+#include <tdh.h>
 
 // TODO: Assess if these are needed
 #include <boost/property_tree/json_parser.hpp>
@@ -21,6 +24,7 @@
 #include <osquery/flags.h>
 #include <osquery/logger.h>
 
+#include "osquery/core/windows/wmi.h"
 #include "osquery/events/windows/windows_etw.h"
 
 namespace pt = boost::property_tree;
@@ -29,6 +33,7 @@ namespace osquery {
 
 REGISTER(WindowsEtwEventPublisher, "event_publisher", "windows_etw");
 
+// TODO: Unsure if this is needed
 const std::chrono::milliseconds kWinEventLogPause(200);
 
 const std::wstring kOsqueryEtwSessionName = L"osquery etw trace session";
@@ -43,9 +48,9 @@ static const GUID kOsquerySessionGuid =
 // GUID that identifies the provider that you want
 // to enable to your session.
 
-// {22FB2CD6-0E7B-422B-A0C7-2FAD1FD0E716}
+// {55404E71 - 4DB9 - 4DEB - A5F5 - 8F86E46DDE56}
 static const GUID kProcEventsGuid =
-{ 0x22fb2cd6, 0x0e7b, 0x4228, {0xa0, 0xc7, 0x2f, 0xad, 0x1f, 0xd0, 0xe7, 0x16 } };
+{ 0x55404e71, 0x4db9, 0x4deb, {0xa5, 0xf5, 0x8f, 0x86, 0xe4, 0x6d, 0xde, 0x56 } };
 
 void WindowsEtwEventPublisher::configure() {
 
@@ -57,26 +62,6 @@ void WindowsEtwEventPublisher::configure() {
   ULONG BufferSize = 0;
   BOOL TraceOn = TRUE;
 
-
-  /*
-  for (auto& sub : subscriptions_) {
-
-    auto sc = getSubscriptionContext(sub->context);
-
-    for (const auto& chan : sc->sources) {
-      // TODO: Registry for system registry events
-
-      if (hSubscription == nullptr) {
-        LOG(WARNING) << "Failed to subscribe to "
-                     << wstringToString(chan.c_str()) << ": " << GetLastError();
-      } else {
-        win_event_handles_.push_back(hSubscription);
-
-      }
-    }
-
-  }
-  */
   BufferSize = sizeof(EVENT_TRACE_PROPERTIES) + MAX_PATH + sizeof(kOsqueryEtwSessionName);
   pSessionProperties = (EVENT_TRACE_PROPERTIES*) malloc(BufferSize);
 
@@ -85,7 +70,7 @@ void WindowsEtwEventPublisher::configure() {
   pSessionProperties->Wnode.Flags = WNODE_FLAG_TRACED_GUID;
   pSessionProperties->Wnode.ClientContext = 1; //QPC clock resolution
   pSessionProperties->Wnode.Guid = kProcEventsGuid;
-  pSessionProperties->LogFileMode = EVENT_TRACE_FILE_MODE_SEQUENTIAL;
+  pSessionProperties->LogFileMode = EVENT_TRACE_REAL_TIME_MODE | EVENT_TRACE_NO_PER_PROCESSOR_BUFFERING;
   pSessionProperties->MaximumFileSize = 1;  // 1 MB
   pSessionProperties->LoggerNameOffset = sizeof(EVENT_TRACE_PROPERTIES);
   pSessionProperties->LogFileNameOffset = sizeof(EVENT_TRACE_PROPERTIES) + static_cast<unsigned long>(kOsqueryEtwSessionName.size());
@@ -107,12 +92,76 @@ void WindowsEtwEventPublisher::configure() {
 
 }
 
+void WINAPI processEvent(PEVENT_RECORD pEvent) {
+
+  // Skip as this is the event header
+  if (IsEqualGUID(pEvent->EventHeader.ProviderId, EventTraceGuid) &&
+    pEvent->EventHeader.EventDescriptor.Opcode == EVENT_TRACE_TYPE_INFO) {
+    return;
+  }
+
+  // Get the size of the buffers first
+  unsigned long buffSize = 0;
+  PTRACE_EVENT_INFO pInfo = nullptr;
+  auto status = TdhGetEventInformation(pEvent, 0, nullptr, pInfo, &buffSize);
+
+  if (ERROR_INSUFFICIENT_BUFFER == status) {
+    pInfo = (TRACE_EVENT_INFO*)malloc(buffSize);
+    if (pInfo == nullptr) {
+      LOG(WARNING) << "Failed to allocate memory for event info";
+      return;
+    }
+
+    // Retrieve the event metadata.
+    status = TdhGetEventInformation(pEvent, 0, nullptr, pInfo, &buffSize);
+  }
+
+  std::stringstream ss;
+  ss << std::hex;
+  ss << pInfo->EventGuid.Data1 << pInfo->EventGuid.Data2 << pInfo->EventGuid.Data3 << pInfo->EventGuid.Data4;
+  VLOG(1) << "Processing event for GUID: " << ss.str();
+  VLOG(1) << "number of props: " << pInfo->PropertyCount;
+  VLOG(1) << "Event Message:\n\n" << (wchar_t*)(pInfo + pInfo->EventMessageOffset)).c_str());
+}
+
 Status WindowsEtwEventPublisher::run() {
   pause();
+
+  ULONG status = ERROR_SUCCESS;
+  EVENT_TRACE_LOGFILE trace;
+  TRACE_LOGFILE_HEADER* pHeader = &trace.LogfileHeader;
+
+  ZeroMemory(&trace, sizeof(EVENT_TRACE_LOGFILE));
+  trace.LogFileName = nullptr;
+  trace.LoggerName = (LPSTR)kOsqueryEtwSessionName.c_str();
+  trace.EventCallback = (PEVENT_CALLBACK)(processEvent);
+  trace.ProcessTraceMode = PROCESS_TRACE_MODE_EVENT_RECORD |
+                           PROCESS_TRACE_MODE_REAL_TIME;
+
+  auto hTrace = OpenTrace(&trace);
+
+  if ((TRACEHANDLE)INVALID_HANDLE_VALUE == hTrace) {
+    LOG(WARNING) << "Failed to open the trace for processing with " << GetLastError();
+    return Status(1, "Failed to open the trace for processing");
+  }
+
+  status = ProcessTrace(&hTrace, 1, 0, 0);
+
+  if (status != ERROR_SUCCESS && status != ERROR_CANCELLED) {
+    LOG(WARNING) << "Failed to process trace with " << status;
+    return Status(1, "Failed to process trace");
+  }
+
+  if ((TRACEHANDLE)INVALID_HANDLE_VALUE != hTrace) {
+    status = CloseTrace(hTrace);
+  }
+
+  // TODO: I believe the ETW query should happen here, followed by a fire
   return Status(0, "OK");
 }
 
 void WindowsEtwEventPublisher::stop() {
+  
   for (auto& e : etw_handles_) {
 
     ULONG status = 0;
@@ -138,89 +187,13 @@ void WindowsEtwEventPublisher::tearDown() {
 }
 
 
-/* TODO: Is this needed, maybe should be different..
-unsigned long __stdcall WindowsEtwEventPublisher::winEventCallback(
-    EVT_SUBSCRIBE_NOTIFY_ACTION action, PVOID pContext, EVT_HANDLE hEvent) {
-  UNREFERENCED_PARAMETER(pContext);
-
-  switch (action) {
-  case EvtSubscribeActionError:
-    VLOG(1) << "Windows event callback failed: " << hEvent;
-    break;
-  case EvtSubscribeActionDeliver: {
-    pt::ptree propTree;
-    auto s = parseEvent(hEvent, propTree);
-    if (s.ok()) {
-      auto ec = createEventContext();
-      /// We leave the parsing of the properties up to the subscriber
-      ec->eventRecord = propTree;
-      ec->channel = stringToWstring(propTree.get("Event.System.Channel", ""));
-      EventFactory::fire<WindowsEventLogEventPublisher>(ec);
-    } else {
-      VLOG(1) << "Error rendering Windows event log: " << s.getCode();
-    }
-  } break;
-
-  default:
-    VLOG(1) << "Received unknown action from Windows event log: "
-            << GetLastError();
-  }
-  return ERROR_SUCCESS;
-}
-
-
-Status WindowsEtwEventPublisher::parseEvent(EVT_HANDLE evt,
-                                                 pt::ptree& propTree) {
-  DWORD buffSize = 0;
-  DWORD buffUsed = 0;
-  DWORD propCount = 0;
-  LPWSTR xml = nullptr;
-  Status status;
-
-  if (!EvtRender(nullptr,
-                 evt,
-                 EvtRenderEventXml,
-                 buffSize,
-                 xml,
-                 &buffUsed,
-                 &propCount)) {
-    if (ERROR_INSUFFICIENT_BUFFER == GetLastError()) {
-      buffSize = buffUsed;
-      xml = static_cast<LPWSTR>(malloc(buffSize));
-      if (xml != nullptr) {
-        EvtRender(nullptr,
-                  evt,
-                  EvtRenderEventXml,
-                  buffSize,
-                  xml,
-                  &buffUsed,
-                  &propCount);
-      } else {
-        status = Status(1, "Unable to reserve memory for event log buffer");
-      }
-    }
-  }
-
-  if (ERROR_SUCCESS == GetLastError()) {
-    std::stringstream ss;
-    ss << wstringToString(xml);
-    read_xml(ss, propTree);
-  } else {
-    status = Status(GetLastError(), "Event rendering failed");
-  }
-
-  if (xml != nullptr) {
-    free(xml);
-  }
-
-  return status;
-} */
-
 bool WindowsEtwEventPublisher::shouldFire(
     const WindowsEtwSubscriptionContextRef& sc,
     const WindowsEtwEventContextRef& ec) const {
 
-  return sc->sources.find(ec->channel) != sc->sources.end();
+  // TODO: Fix this up as neede
+  // return sc->sources.find(ec->channel) != sc->sources.end();
+  return true;
 
 }
 
