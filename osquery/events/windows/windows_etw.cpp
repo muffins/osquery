@@ -25,7 +25,7 @@ namespace osquery {
 
 REGISTER(WindowsEtwEventPublisher, "event_publisher", "windows_etw");
 
-const std::wstring kOsqueryEtwSessionName = L"osquery etw trace session";
+const std::string kOsqueryEtwSessionName = "osquery etw trace session";
 
 // GUID that identifies your trace session.
 // Remember to create your own session GUID.
@@ -40,17 +40,19 @@ static const GUID kOsquerySessionGuid = {
 // MS Kernel Registry events - TODO Look into this
 // {70EB4F03-C1DE-4F73-A051-33D13D5413BD}
 
+/*
 static const GUID kRegEventsGuid = {
     0x70EB4F03,
     0xC1DE,
     0x4F73,
     {0xa0, 0x51, 0x33, 0xd1, 0x3d, 0x54, 0x13, 0xbd}};
 
+*/
 void WindowsEtwEventPublisher::configure() {
   stop();
 
   // Start and enable a trace for each GUID we're provided with
-  for (const auto& guid : providerGuids_) {
+  for (const auto& sub : subscriptions_) {
     ULONG status = ERROR_SUCCESS;
     TRACEHANDLE SessionHandle = 0;
     EVENT_TRACE_PROPERTIES* pSessionProperties = NULL;
@@ -65,7 +67,9 @@ void WindowsEtwEventPublisher::configure() {
     pSessionProperties->Wnode.BufferSize = BufferSize;
     pSessionProperties->Wnode.Flags = WNODE_FLAG_TRACED_GUID;
     pSessionProperties->Wnode.ClientContext = 1;
-    pSessionProperties->Wnode.Guid = guid;
+
+    auto sc = getSubscriptionContext(sub->context);
+    pSessionProperties->Wnode.Guid = sc->guid;
     pSessionProperties->LogFileMode =
         EVENT_TRACE_REAL_TIME_MODE | EVENT_TRACE_NO_PER_PROCESSOR_BUFFERING;
     pSessionProperties->MaximumFileSize = 1; // 1 MB
@@ -78,25 +82,35 @@ void WindowsEtwEventPublisher::configure() {
                         (LPCSTR)kOsqueryEtwSessionName.c_str(),
                         pSessionProperties);
 
-    etw_handles_[guid] = SessionHandle;
+    if (SessionHandle == 0) {
+      LOG(WARNING) << "Failed to start trace for provider with " << status;
+      return;
+    }
+
+    //etw_handles_[sc->guid] = SessionHandle;
+    etw_handles_.push_back(std::make_pair(sc->guid, SessionHandle));
 
     status = EnableTraceEx2(SessionHandle,
-                            (LPCGUID)&guid,
+                            (LPCGUID)&sc->guid,
                             EVENT_CONTROL_CODE_ENABLE_PROVIDER,
                             TRACE_LEVEL_INFORMATION,
                             0,
                             0,
                             0,
                             NULL);
+    if (pSessionProperties != nullptr) {
+      free(pSessionProperties);
+    }
   }
 }
 
 // TODO: This needs some heavy cleanup
-void WINAPI processEvent(PEVENT_RECORD pEvent) {
+BOOL WINAPI WindowsEtwEventPublisher::processEtwRecord(PEVENT_RECORD pEvent) {
+
   // Skip as this is the event header
   if (IsEqualGUID(pEvent->EventHeader.ProviderId, EventTraceGuid) &&
       pEvent->EventHeader.EventDescriptor.Opcode == EVENT_TRACE_TYPE_INFO) {
-    return;
+    return FALSE;
   }
 
   // Get the size of the buffers first
@@ -108,7 +122,7 @@ void WINAPI processEvent(PEVENT_RECORD pEvent) {
     pInfo = (TRACE_EVENT_INFO*)malloc(buffSize);
     if (pInfo == nullptr) {
       LOG(WARNING) << "Failed to allocate memory for event info";
-      return;
+      return FALSE;
     }
 
     // Retrieve the event metadata.
@@ -169,7 +183,7 @@ void WINAPI processEvent(PEVENT_RECORD pEvent) {
       pFormattedData = (LPWSTR)malloc(formattedDataSize);
       if (pFormattedData == NULL) {
         LOG(WARNING) << "Failed to malloc";
-        return;
+        return FALSE;
       }
 
       // Retrieve the formatted data.
@@ -186,6 +200,7 @@ void WINAPI processEvent(PEVENT_RECORD pEvent) {
           pFormattedData,
           &UserDataConsumed);
     }
+
     pUserData += UserDataConsumed;
 
     auto name = wstringToString(
@@ -193,15 +208,19 @@ void WINAPI processEvent(PEVENT_RECORD pEvent) {
     connDetails[name] = wstringToString(pFormattedData);
   }
 
-  for (const auto& kv : connDetails) {
-    VLOG(1) << "Evt[" << kv.first << "] - " << kv.second;
-  }
-
-  auto ec = createEventContext();
   /// We leave the parsing of the properties up to the subscriber
+  auto ec = createEventContext();
   ec->eventData = connDetails;
   ec->etwProviderGuid = pEvent->EventHeader.ProviderId;
   EventFactory::fire<WindowsEtwEventPublisher>(ec);
+
+  if (pInfo != nullptr) {
+    free(pInfo);
+  }
+  if (pFormattedData != nullptr) {
+    free(pFormattedData);
+  }
+  return TRUE;
 }
 
 Status WindowsEtwEventPublisher::run() {
@@ -212,7 +231,7 @@ Status WindowsEtwEventPublisher::run() {
   ZeroMemory(&trace, sizeof(EVENT_TRACE_LOGFILE));
   trace.LogFileName = nullptr;
   trace.LoggerName = (LPSTR)kOsqueryEtwSessionName.c_str();
-  trace.EventCallback = (PEVENT_CALLBACK)(processEvent);
+  trace.EventCallback = (PEVENT_CALLBACK)processEtwRecord;
   trace.ProcessTraceMode =
       PROCESS_TRACE_MODE_EVENT_RECORD | PROCESS_TRACE_MODE_REAL_TIME;
 
@@ -258,6 +277,13 @@ void WindowsEtwEventPublisher::stop() {
                             (LPSTR)kOsqueryEtwSessionName.c_str(),
                             pSessionProperties,
                             EVENT_TRACE_CONTROL_STOP);
+    }
+    if (status != 0) {
+      LOG(WARNING) << "Failed to stop trace with " << status;
+    }
+
+    if (pSessionProperties != nullptr) {
+      free(pSessionProperties);
     }
   }
 

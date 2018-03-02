@@ -95,17 +95,9 @@ class WindowsEtwEventPublisher
   /// The calling for beginning the thread's run loop.
   Status run() override;
 
-  /*
-  static unsigned long __stdcall winEventCallback(
-      EVT_SUBSCRIBE_NOTIFY_ACTION action, PVOID pContext, EVT_HANDLE hEvent);
-
-  /// Helper function to convert an XML event blob into a property tree
-  static Status parseEvent(EVT_HANDLE evt,
-                           boost::property_tree::ptree& propTree);
-  */
-
-  /// Windows Event Callback for ETW trace parsing
-  // void WINAPI WindowsEtwEventPublisher::processEvent(PEVENT_RECORD pEvent);
+  /// Callback function for processing ETW record data
+  /// Must be static to be handed off to the Windows API
+  static BOOL WINAPI processEtwRecord(PEVENT_RECORD pEvent);
 
  private:
   /// Ensures that all Windows event log subscriptions are removed
@@ -118,10 +110,9 @@ class WindowsEtwEventPublisher
   /// Vector of all provider GUIDs on which we'll begin traces
   std::vector<GUID> providerGuids_;
 
-  std::map<GUID, TRACEHANDLE> etw_handles_;
-
-  /// Vector of all handles to windows event log publisher callbacks
-  // std::vector<TRACEHANDLE> etw_handles_;
+  /// Map of all GUIDs to handles for all event traces
+  //std::map<GUID, TRACEHANDLE> etw_handles_;
+  std::vector<std::pair<GUID, TRACEHANDLE>> etw_handles_;
 
  public:
   friend class WindowsEtwTests;

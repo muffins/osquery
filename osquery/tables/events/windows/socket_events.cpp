@@ -9,6 +9,7 @@
  */
 
 #include <osquery/core.h>
+#include <osquery/logger.h>
 #include <osquery/tables.h>
 
 #include "osquery/events/windows/windows_etw.h"
@@ -48,6 +49,11 @@ Status WindowsEtwSocketSubscriber::Callback(const ECRef& ec, const SCRef& sc) {
   FILETIME cTime;
   GetSystemTimeAsFileTime(&cTime);
   r["time"] = BIGINT(filetimeToUnixtime(cTime));
+
+
+  for (const auto& kv : ec->eventData) {
+    VLOG(1) << "Evt[" << kv.first << "] - " << kv.second;
+  }
 
   // TODO
   r["data"] = "";
