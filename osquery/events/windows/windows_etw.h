@@ -12,8 +12,15 @@
 
 #define _WIN32_DCOM
 
-#include <Windows.h>
-#include <Evntrace.h>
+// Required for obtaining the event trace guid
+#define INITGUID
+
+// clang-format off
+#include <windows.h>
+#include <evntcons.h>
+#include <evntrace.h>
+#include <tdh.h>
+// clang-format on
 
 #include <osquery/events.h>
 
@@ -28,7 +35,9 @@ namespace osquery {
  */
 struct WindowsEtwSubscriptionContext : public SubscriptionContext {
   /// Channel or Path of the Windows Event Log to subscribe to
-  std::set<std::wstring> sources;
+  // std::set<std::wstring> sources;
+  // The ETW Provicer GUID to subscribe to
+  GUID guid;
 
  private:
   friend class WindowsEtwEventPublisher;
@@ -44,18 +53,19 @@ struct WindowsEtwSubscriptionContext : public SubscriptionContext {
  */
 struct WindowsEtwEventContext : public EventContext {
   /// A Windows event log record converted from XML
-  boost::property_tree::ptree eventRecord;
+  // boost::property_tree::ptree eventRecord;
+  std::map<std::string, std::string> eventData;
 
   /*
    * In Windows event logs, the source to which an event belongs is referred
    * to as the 'channel'. We keep track of the channel for each event, as the
    * subscriber can decide to receive only events for specified channels.
    */
-  std::wstring channel;
+  // std::wstring channel;
+  GUID etwProviderGuid;
 };
 
-using WindowsEtwEventContextRef =
-    std::shared_ptr<WindowsEtwEventContext>;
+using WindowsEtwEventContextRef = std::shared_ptr<WindowsEtwEventContext>;
 using WindowsEtwSubscriptionContextRef =
     std::shared_ptr<WindowsEtwSubscriptionContext>;
 
@@ -85,7 +95,6 @@ class WindowsEtwEventPublisher
   /// The calling for beginning the thread's run loop.
   Status run() override;
 
-  /// Windows Event Callback required for API calls
   /*
   static unsigned long __stdcall winEventCallback(
       EVT_SUBSCRIBE_NOTIFY_ACTION action, PVOID pContext, EVT_HANDLE hEvent);
@@ -95,6 +104,9 @@ class WindowsEtwEventPublisher
                            boost::property_tree::ptree& propTree);
   */
 
+  /// Windows Event Callback for ETW trace parsing
+  // void WINAPI WindowsEtwEventPublisher::processEvent(PEVENT_RECORD pEvent);
+
  private:
   /// Ensures that all Windows event log subscriptions are removed
   void stop() override;
@@ -103,12 +115,16 @@ class WindowsEtwEventPublisher
   bool isSubscriptionActive() const;
 
  private:
+  /// Vector of all provider GUIDs on which we'll begin traces
+  std::vector<GUID> providerGuids_;
+
+  std::map<GUID, TRACEHANDLE> etw_handles_;
+
   /// Vector of all handles to windows event log publisher callbacks
-  //std::vector<EVT_HANDLE> win_event_handles_;
-  std::vector<TRACEHANDLE> etw_handles_;
+  // std::vector<TRACEHANDLE> etw_handles_;
 
  public:
   friend class WindowsEtwTests;
-  FRIEND_TEST(WindowsEtwTests, test_register_event_pub);
+  // FRIEND_TEST(WindowsEtwTests, test_register_event_pub);
 };
 }

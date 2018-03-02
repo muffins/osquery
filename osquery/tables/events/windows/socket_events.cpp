@@ -8,57 +8,51 @@
  *  You may select, at your option, one of the above-listed licenses.
  */
 
-#include <boost/algorithm/string.hpp>
-#include <boost/property_tree/ptree.hpp>
-#include <boost/property_tree/xml_parser.hpp>
-
-#include <osquery/config.h>
 #include <osquery/core.h>
-#include <osquery/logger.h>
 #include <osquery/tables.h>
 
-#include "osquery/core/conversions.h"
-#include "osquery/core/json.h"
-#include "osquery/core/windows/wmi.h"
 #include "osquery/events/windows/windows_etw.h"
+//#include "osquery/core/windows/wmi.h"
+//#include "osquery/core/conversions.h"
 #include "osquery/filesystem/fileops.h"
-
-namespace pt = boost::property_tree;
 
 namespace osquery {
 
-class WindowsProcessEventSubscriber
+// {55404E71 - 4DB9 - 4DEB - A5F5 - 8F86E46DDE56}
+// Socket events, we can maybe go a level higher?
+static const GUID kSocketEventsGuid = {
+    0x55404E71,
+    0x4DB9,
+    0x4DEB,
+    {0xA5, 0XF5, 0x8F, 0x86, 0xE4, 0x6D, 0xDE, 0x56}};
+
+class WindowsEtwSocketSubscriber
     : public EventSubscriber<WindowsEtwEventPublisher> {
  public:
   Status init() override {
     auto wc = createSubscriptionContext();
-
-    // Set up the GUIDs to sunscribe to here
-    /*
-    for (auto& chan : osquery::split(FLAGS_windows_event_channels, ",")) {
-      // We remove quotes if they exist
-      boost::erase_all(chan, "\"");
-      boost::erase_all(chan, "\'");
-      wc->sources.insert(stringToWstring(chan));
-    }
-    */
-
-    subscribe(&WindowsProcessEventSubscriber::Callback, wc);
+    wc->guid = kSocketEventsGuid;
+    subscribe(&WindowsEtwSocketSubscriber::Callback, wc);
     return Status(0, "OK");
   }
 
   Status Callback(const ECRef& ec, const SCRef& sc);
 };
 
-REGISTER(WindowsProcessEventSubscriber, "event_subscriber", "process_events");
+REGISTER(WindowsEtwSocketSubscriber,
+         "event_subscriber",
+         "windows_etw_socket_events");
 
-
-Status WindowsProcessEventSubscriber::Callback(const ECRef& ec, const SCRef& sc) {
+Status WindowsEtwSocketSubscriber::Callback(const ECRef& ec, const SCRef& sc) {
   Row r;
   FILETIME cTime;
   GetSystemTimeAsFileTime(&cTime);
   r["time"] = BIGINT(filetimeToUnixtime(cTime));
 
+  // TODO
+  r["data"] = "";
+
+  add(r);
   return Status(0, "OK");
 }
 }

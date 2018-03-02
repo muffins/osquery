@@ -8,18 +8,10 @@
  *  You may select, at your option, one of the above-listed licenses.
  */
 
-#define _WIN32_DCOM
-#define INITGUID
-
-#include <evntcons.h>
-#include <evntrace.h>
-#include <tdh.h>
-#include <windows.h>
-
 // TODO: Assess if these are needed
-#include <boost/property_tree/json_parser.hpp>
-#include <boost/property_tree/xml_parser.hpp>
-#include <boost/tokenizer.hpp>
+//#include <boost/property_tree/json_parser.hpp>
+//#include <boost/property_tree/xml_parser.hpp>
+//#include <boost/tokenizer.hpp>
 
 #include <osquery/flags.h>
 #include <osquery/logger.h>
@@ -27,39 +19,28 @@
 #include "osquery/core/windows/wmi.h"
 #include "osquery/events/windows/windows_etw.h"
 
-namespace pt = boost::property_tree;
+// namespace pt = boost::property_tree;
 
 namespace osquery {
 
 REGISTER(WindowsEtwEventPublisher, "event_publisher", "windows_etw");
 
-// TODO: Unsure if this is needed
-const std::chrono::milliseconds kWinEventLogPause(200);
-
 const std::wstring kOsqueryEtwSessionName = L"osquery etw trace session";
 
 // GUID that identifies your trace session.
 // Remember to create your own session GUID.
-
 // {22377e0a-63b0-4f43-a824-4b3554ac8985}
+// TODO: We should probably randomly generate a GUID here.
 static const GUID kOsquerySessionGuid = {
     0x22377e0a,
     0x63b0,
     0x4f43,
     {0xa8, 0x24, 0x4b, 0x35, 0x54, 0xac, 0x89, 0x85}};
 
-// GUID that identifies the provider that you want
-// to enable to your session.
-
-// {55404E71 - 4DB9 - 4DEB - A5F5 - 8F86E46DDE56}
-// Socket events, we can maybe go a level higher?
-// static const GUID kProcEventsGuid =
-//{ 0x55404e71, 0x4db9, 0x4deb, {0xa5, 0xf5, 0x8f, 0x86, 0xe4, 0x6d, 0xde, 0x56
-//} };
-
-// MS Kernel Registry events
+// MS Kernel Registry events - TODO Look into this
 // {70EB4F03-C1DE-4F73-A051-33D13D5413BD}
-static const GUID kProcEventsGuid = {
+
+static const GUID kRegEventsGuid = {
     0x70EB4F03,
     0xC1DE,
     0x4F73,
@@ -68,45 +49,49 @@ static const GUID kProcEventsGuid = {
 void WindowsEtwEventPublisher::configure() {
   stop();
 
-  ULONG status = ERROR_SUCCESS;
-  TRACEHANDLE SessionHandle = 0;
-  EVENT_TRACE_PROPERTIES* pSessionProperties = NULL;
-  ULONG BufferSize = 0;
-  BOOL TraceOn = TRUE;
+  // Start and enable a trace for each GUID we're provided with
+  for (const auto& guid : providerGuids_) {
+    ULONG status = ERROR_SUCCESS;
+    TRACEHANDLE SessionHandle = 0;
+    EVENT_TRACE_PROPERTIES* pSessionProperties = NULL;
+    ULONG BufferSize = 0;
+    BOOL TraceOn = TRUE;
 
-  BufferSize = sizeof(EVENT_TRACE_PROPERTIES) + MAX_PATH +
-               sizeof(kOsqueryEtwSessionName);
-  pSessionProperties = (EVENT_TRACE_PROPERTIES*)malloc(BufferSize);
+    BufferSize = sizeof(EVENT_TRACE_PROPERTIES) + MAX_PATH +
+                 sizeof(kOsqueryEtwSessionName);
+    pSessionProperties = (EVENT_TRACE_PROPERTIES*)malloc(BufferSize);
 
-  ZeroMemory(pSessionProperties, BufferSize);
-  pSessionProperties->Wnode.BufferSize = BufferSize;
-  pSessionProperties->Wnode.Flags = WNODE_FLAG_TRACED_GUID;
-  pSessionProperties->Wnode.ClientContext = 1; // QPC clock resolution
-  pSessionProperties->Wnode.Guid = kProcEventsGuid;
-  pSessionProperties->LogFileMode =
-      EVENT_TRACE_REAL_TIME_MODE | EVENT_TRACE_NO_PER_PROCESSOR_BUFFERING;
-  pSessionProperties->MaximumFileSize = 1; // 1 MB
-  pSessionProperties->LoggerNameOffset = sizeof(EVENT_TRACE_PROPERTIES);
-  pSessionProperties->LogFileNameOffset =
-      sizeof(EVENT_TRACE_PROPERTIES) +
-      static_cast<unsigned long>(kOsqueryEtwSessionName.size());
+    ZeroMemory(pSessionProperties, BufferSize);
+    pSessionProperties->Wnode.BufferSize = BufferSize;
+    pSessionProperties->Wnode.Flags = WNODE_FLAG_TRACED_GUID;
+    pSessionProperties->Wnode.ClientContext = 1;
+    pSessionProperties->Wnode.Guid = guid;
+    pSessionProperties->LogFileMode =
+        EVENT_TRACE_REAL_TIME_MODE | EVENT_TRACE_NO_PER_PROCESSOR_BUFFERING;
+    pSessionProperties->MaximumFileSize = 1; // 1 MB
+    pSessionProperties->LoggerNameOffset = sizeof(EVENT_TRACE_PROPERTIES);
+    pSessionProperties->LogFileNameOffset =
+        sizeof(EVENT_TRACE_PROPERTIES) +
+        static_cast<unsigned long>(kOsqueryEtwSessionName.size());
 
-  status = StartTrace((PTRACEHANDLE)&SessionHandle,
-                      (LPCSTR)kOsqueryEtwSessionName.c_str(),
-                      pSessionProperties);
+    status = StartTrace((PTRACEHANDLE)&SessionHandle,
+                        (LPCSTR)kOsqueryEtwSessionName.c_str(),
+                        pSessionProperties);
 
-  etw_handles_.push_back(SessionHandle);
+    etw_handles_[guid] = SessionHandle;
 
-  status = EnableTraceEx2(SessionHandle,
-                          (LPCGUID)&kProcEventsGuid,
-                          EVENT_CONTROL_CODE_ENABLE_PROVIDER,
-                          TRACE_LEVEL_INFORMATION,
-                          0,
-                          0,
-                          0,
-                          NULL);
+    status = EnableTraceEx2(SessionHandle,
+                            (LPCGUID)&guid,
+                            EVENT_CONTROL_CODE_ENABLE_PROVIDER,
+                            TRACE_LEVEL_INFORMATION,
+                            0,
+                            0,
+                            0,
+                            NULL);
+  }
 }
 
+// TODO: This needs some heavy cleanup
 void WINAPI processEvent(PEVENT_RECORD pEvent) {
   // Skip as this is the event header
   if (IsEqualGUID(pEvent->EventHeader.ProviderId, EventTraceGuid) &&
@@ -145,10 +130,10 @@ void WINAPI processEvent(PEVENT_RECORD pEvent) {
           ? 4
           : 8;
 
-  // VLOG(1) << "[+] Pid: " <<
   // The bummer here, is that we often might want the parent of this process.
   // If cmd.exe calls ping.exe, it spawns a new process, and that's what shows
-  // up here.
+  // up here, as opposed to the cmd.exe PID :(
+  // TODO: Can we derive the process name or the parent pid?
   auto responsiblePid = pEvent->EventHeader.ProcessId;
   std::map<std::string, std::string> connDetails;
 
@@ -208,20 +193,18 @@ void WINAPI processEvent(PEVENT_RECORD pEvent) {
     connDetails[name] = wstringToString(pFormattedData);
   }
 
-  // For network events:
-  /*
-  if (!connDetails["NodeName"].empty()) {
-    VLOG(1) << "[" << responsiblePid << "] - " << connDetails["NodeName"];
-  }
-  */
   for (const auto& kv : connDetails) {
     VLOG(1) << "Evt[" << kv.first << "] - " << kv.second;
   }
+
+  auto ec = createEventContext();
+  /// We leave the parsing of the properties up to the subscriber
+  ec->eventData = connDetails;
+  ec->etwProviderGuid = pEvent->EventHeader.ProviderId;
+  EventFactory::fire<WindowsEtwEventPublisher>(ec);
 }
 
 Status WindowsEtwEventPublisher::run() {
-  // pause();
-
   ULONG status = ERROR_SUCCESS;
   EVENT_TRACE_LOGFILE trace;
   TRACE_LOGFILE_HEADER* pHeader = &trace.LogfileHeader;
@@ -252,7 +235,6 @@ Status WindowsEtwEventPublisher::run() {
     status = CloseTrace(hTrace);
   }
 
-  // TODO: I believe the ETW query should happen here, followed by a fire
   return Status(0, "OK");
 }
 
@@ -265,22 +247,20 @@ void WindowsEtwEventPublisher::stop() {
 
     ZeroMemory(pSessionProperties, BufferSize);
     pSessionProperties->Wnode.BufferSize = BufferSize;
-    pSessionProperties->Wnode.Guid = kProcEventsGuid;
+    pSessionProperties->Wnode.Guid = etw.first;
     pSessionProperties->LoggerNameOffset = sizeof(EVENT_TRACE_PROPERTIES);
     pSessionProperties->LogFileNameOffset =
         sizeof(EVENT_TRACE_PROPERTIES) +
         static_cast<unsigned long>(kOsqueryEtwSessionName.size());
 
-    if (etw != 0) {
-      status = ControlTrace(etw,
+    if (etw.second != 0) {
+      status = ControlTrace(etw.second,
                             (LPSTR)kOsqueryEtwSessionName.c_str(),
                             pSessionProperties,
                             EVENT_TRACE_CONTROL_STOP);
     }
-    // Redundant?
-    status = StopTrace(
-        etw, (LPCSTR)kOsqueryEtwSessionName.c_str(), pSessionProperties);
   }
+
   etw_handles_.clear();
 }
 
@@ -291,12 +271,12 @@ void WindowsEtwEventPublisher::tearDown() {
 bool WindowsEtwEventPublisher::shouldFire(
     const WindowsEtwSubscriptionContextRef& sc,
     const WindowsEtwEventContextRef& ec) const {
-  // TODO: Fix this up as neede
-  // return sc->sources.find(ec->channel) != sc->sources.end();
-  return true;
+  // TODO: This will check if the GUID the subscriber has matches the
+  // GUID of the fired Event
+  return (IsEqualGUID(ec->etwProviderGuid, sc->guid) == TRUE);
 }
 
 bool WindowsEtwEventPublisher::isSubscriptionActive() const {
-  return etw_handles_.size() > 0;
+  return etw_handles_.empty();
 }
 }
