@@ -19,13 +19,13 @@
 
 namespace osquery {
 
-// {55404E71 - 4DB9 - 4DEB - A5F5 - 8F86E46DDE56}
+// {E53C6823-7BB8-44BB-90DC-3F86090D48A6}
 // Socket events, we can maybe go a level higher?
 static const GUID kSocketEventsGuid = {
-    0x55404E71,
-    0x4DB9,
-    0x4DEB,
-    {0xA5, 0XF5, 0x8F, 0x86, 0xE4, 0x6D, 0xDE, 0x56}};
+    0xE53C6823,
+    0x7BB8,
+    0x44BB,
+    {0x90, 0XDC, 0x3F, 0x86, 0x09, 0x0D, 0x48, 0xA6}};
 
 class WindowsEtwSocketSubscriber
     : public EventSubscriber<WindowsEtwEventPublisher> {
@@ -46,16 +46,17 @@ REGISTER(WindowsEtwSocketSubscriber,
 
 Status WindowsEtwSocketSubscriber::Callback(const ECRef& ec, const SCRef& sc) {
   Row r;
-  FILETIME cTime;
-  GetSystemTimeAsFileTime(&cTime);
-  r["time"] = BIGINT(filetimeToUnixtime(cTime));
 
+  r["timestamp"] = BIGINT(ec->timestamp);
+  r["uptime"] = BIGINT(ec->uptime);
+  r["remote_address"] = "";
+  
+  VLOG(1) << "Event - " << ec->eventId << " " << static_cast<int>(ec->level);
 
   for (const auto& kv : ec->eventData) {
     VLOG(1) << "Evt[" << kv.first << "] - " << kv.second;
   }
 
-  // TODO
   r["data"] = "";
 
   add(r);

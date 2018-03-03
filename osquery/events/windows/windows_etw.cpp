@@ -18,6 +18,7 @@
 
 #include "osquery/core/windows/wmi.h"
 #include "osquery/events/windows/windows_etw.h"
+#include "osquery/filesystem/fileops.h"
 
 // namespace pt = boost::property_tree;
 
@@ -56,10 +57,9 @@ void WindowsEtwEventPublisher::configure() {
     ULONG status = ERROR_SUCCESS;
     TRACEHANDLE SessionHandle = 0;
     EVENT_TRACE_PROPERTIES* pSessionProperties = NULL;
-    ULONG BufferSize = 0;
     BOOL TraceOn = TRUE;
 
-    BufferSize = sizeof(EVENT_TRACE_PROPERTIES) + MAX_PATH +
+    unsigned long BufferSize = sizeof(EVENT_TRACE_PROPERTIES) + MAX_PATH +
                  sizeof(kOsqueryEtwSessionName);
     pSessionProperties = (EVENT_TRACE_PROPERTIES*)malloc(BufferSize);
 
@@ -82,12 +82,21 @@ void WindowsEtwEventPublisher::configure() {
                         (LPCSTR)kOsqueryEtwSessionName.c_str(),
                         pSessionProperties);
 
+    // If the trace already exists, stop it and restart
+    if (status == ERROR_ALREADY_EXISTS) {
+      // Pushback a stub GUID for stopping
+      etw_handles_.push_back(std::make_pair(sc->guid, 0));
+      stop();
+      status = StartTrace((PTRACEHANDLE)&SessionHandle,
+        (LPCSTR)kOsqueryEtwSessionName.c_str(),
+        pSessionProperties);
+    }
+
     if (SessionHandle == 0) {
       LOG(WARNING) << "Failed to start trace for provider with " << status;
       return;
     }
 
-    //etw_handles_[sc->guid] = SessionHandle;
     etw_handles_.push_back(std::make_pair(sc->guid, SessionHandle));
 
     status = EnableTraceEx2(SessionHandle,
@@ -212,6 +221,18 @@ BOOL WINAPI WindowsEtwEventPublisher::processEtwRecord(PEVENT_RECORD pEvent) {
   auto ec = createEventContext();
   ec->eventData = connDetails;
   ec->etwProviderGuid = pEvent->EventHeader.ProviderId;
+
+  ec->pid = pEvent->EventHeader.ProcessId;
+  ec->eventId = pEvent->EventHeader.EventDescriptor.Id;
+  ec->level = pEvent->EventHeader.EventDescriptor.Level;
+  ec->channel = pEvent->EventHeader.EventDescriptor.Channel;
+  ec->uptime = pEvent->EventHeader.ProcessorTime;
+
+  FILETIME ft;
+  ft.dwLowDateTime = pEvent->EventHeader.TimeStamp.LowPart;
+  ft.dwHighDateTime = pEvent->EventHeader.TimeStamp.HighPart;
+  ec->timestamp = filetimeToUnixtime(ft);
+
   EventFactory::fire<WindowsEtwEventPublisher>(ec);
 
   if (pInfo != nullptr) {
@@ -258,9 +279,11 @@ Status WindowsEtwEventPublisher::run() {
 }
 
 void WindowsEtwEventPublisher::stop() {
+
   for (auto& etw : etw_handles_) {
     ULONG status = 0;
-    ULONG BufferSize = 0;
+    unsigned long BufferSize = sizeof(EVENT_TRACE_PROPERTIES) + MAX_PATH +
+      sizeof(kOsqueryEtwSessionName);
     EVENT_TRACE_PROPERTIES* pSessionProperties =
         (EVENT_TRACE_PROPERTIES*)malloc(BufferSize);
 
@@ -272,13 +295,12 @@ void WindowsEtwEventPublisher::stop() {
         sizeof(EVENT_TRACE_PROPERTIES) +
         static_cast<unsigned long>(kOsqueryEtwSessionName.size());
 
-    if (etw.second != 0) {
-      status = ControlTrace(etw.second,
-                            (LPSTR)kOsqueryEtwSessionName.c_str(),
-                            pSessionProperties,
-                            EVENT_TRACE_CONTROL_STOP);
-    }
-    if (status != 0) {
+    status = ControlTrace(etw.second,
+                          (LPSTR)kOsqueryEtwSessionName.c_str(),
+                          pSessionProperties,
+                          EVENT_TRACE_CONTROL_STOP);
+
+    if (status != 0 && status != ERROR_MORE_DATA) {
       LOG(WARNING) << "Failed to stop trace with " << status;
     }
 

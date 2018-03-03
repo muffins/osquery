@@ -52,16 +52,24 @@ struct WindowsEtwSubscriptionContext : public SubscriptionContext {
  * the subscriber for further parsing and row population.
  */
 struct WindowsEtwEventContext : public EventContext {
-  /// A Windows event log record converted from XML
-  // boost::property_tree::ptree eventRecord;
+  
+  /// Event Metadata associated with the record
+  unsigned long pid;
+
+  unsigned short eventId;
+
+  unsigned char level;
+
+  unsigned char channel;
+
+  unsigned long long uptime;
+
+  unsigned long long timestamp;
+
+  /// Relevant event data
   std::map<std::string, std::string> eventData;
 
-  /*
-   * In Windows event logs, the source to which an event belongs is referred
-   * to as the 'channel'. We keep track of the channel for each event, as the
-   * subscriber can decide to receive only events for specified channels.
-   */
-  // std::wstring channel;
+  /// GUID associated with the ETW trace provider
   GUID etwProviderGuid;
 };
 
