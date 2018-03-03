@@ -21,11 +21,12 @@ namespace osquery {
 
 // {E53C6823-7BB8-44BB-90DC-3F86090D48A6}
 // Socket events, we can maybe go a level higher?
-static const GUID kSocketEventsGuid = {
-    0xE53C6823,
-    0x7BB8,
-    0x44BB,
-    {0x90, 0XDC, 0x3F, 0x86, 0x09, 0x0D, 0x48, 0xA6}};
+
+const GUID kSocketEventsGuid = {
+  0xE53C6823,
+  0x7BB8,
+  0x44BB,
+  { 0x90, 0XDC, 0x3F, 0x86, 0x09, 0x0D, 0x48, 0xA6 } };
 
 class WindowsEtwSocketSubscriber
     : public EventSubscriber<WindowsEtwEventPublisher> {

@@ -34,9 +34,7 @@ namespace osquery {
  * Windows event logs the subscriber wishes to subscribe to.
  */
 struct WindowsEtwSubscriptionContext : public SubscriptionContext {
-  /// Channel or Path of the Windows Event Log to subscribe to
-  // std::set<std::wstring> sources;
-  // The ETW Provicer GUID to subscribe to
+  /// The GUID of the ETW provider to which we'll subscribe
   GUID guid;
 
  private:
@@ -52,7 +50,6 @@ struct WindowsEtwSubscriptionContext : public SubscriptionContext {
  * the subscriber for further parsing and row population.
  */
 struct WindowsEtwEventContext : public EventContext {
-  
   /// Event Metadata associated with the record
   unsigned long pid;
 
@@ -105,7 +102,7 @@ class WindowsEtwEventPublisher
 
   /// Callback function for processing ETW record data
   /// Must be static to be handed off to the Windows API
-  static BOOL WINAPI processEtwRecord(PEVENT_RECORD pEvent);
+  static bool WINAPI processEtwRecord(PEVENT_RECORD pEvent);
 
  private:
   /// Ensures that all Windows event log subscriptions are removed
@@ -119,8 +116,8 @@ class WindowsEtwEventPublisher
   std::vector<GUID> providerGuids_;
 
   /// Map of all GUIDs to handles for all event traces
-  //std::map<GUID, TRACEHANDLE> etw_handles_;
-  std::vector<std::pair<GUID, TRACEHANDLE>> etw_handles_;
+  // std::map<GUID, TRACEHANDLE> etw_handles_;
+  std::vector<std::pair<GUID, PTRACEHANDLE>> etw_handles_;
 
  public:
   friend class WindowsEtwTests;
