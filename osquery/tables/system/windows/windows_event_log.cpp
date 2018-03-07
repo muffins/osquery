@@ -65,9 +65,9 @@ void parseWelXml(std::string& xml, Row& r) {
   unsigned long long keywords = 0;
   if (system->first_node("Keywords") != nullptr) {
     safeStrtoull(system->first_node("Keywords")->value(), 10, keywords);
-  } 
+  }
   r["keywords"] = BIGINT(keywords);
-  
+
   if (system->first_node("Provider") != nullptr) {
     r["provider_name"] =
         system->first_node("Provider")->first_attribute("Name") == nullptr
@@ -101,26 +101,28 @@ void parseWelXml(std::string& xml, Row& r) {
   }
 
   // Next parse the event data fields
-  std::map<std::string, std::string> data;
+  // std::map<std::string, std::string> data;
+  JSON document;
   auto eventData = root->first_node("EventData");
   unsigned int cnt = 0;
   for (xml_node<>* node = eventData->first_node(); node;
        node = node->next_sibling()) {
     if (node->first_attribute("Name") == nullptr) {
-      // In the event the log has no labeling for event data, we generate a label
-      // similar to how Windows labels data values, paramX
+      // In the event the log has no labeling for event data, we generate a
+      // label similar to how Windows labels data values, paramX
       LOG(WARNING) << "Generating data label for Event Data child with no name";
-      data["param" + std::to_string(cnt)] = node->value();
+      document.add("param" + std::to_string(cnt), node->value());
       cnt++;
     } else {
-      data[node->first_attribute("Name")->value()] = node->value();
-    }
-    
+      document.add(node->first_attribute("Name")->value(), node->value());
+    }  
   }
-  r["data"] = "";
+  std::string data{""};
+  document.toString(data);
+  r["data"] = data;
 }
 
-void parseQueryResults(EVT_HANDLE& queryResults, QueryData& results) {
+void parseQueryResults(EVT_HANDLE queryResults, QueryData& results) {
   // Parse the results
   std::vector<EVT_HANDLE> events(kNumEventsBlock);
   unsigned long numEvents = 0;
@@ -186,8 +188,16 @@ QueryData genWindowsEventLog(QueryContext& context) {
   auto eids = context.constraints["eventid"].getAll(EQUALS);
 
   for (const auto& channel : channels) {
-    std::string searchQuery = "Event/" + channel + "[" + osquery::join(eids, "|") + "]";
-    auto queryResults =
+    std::string searchQuery =
+      "Event/" + channel;
+    if (!eids.empty()) {
+      searchQuery += "[";
+      for (const auto& eid : eids) {
+        searchQuery += "EventID=" + eid + "|";
+      }
+      searchQuery.replace(searchQuery.size()-1, 1, "]");
+    }
+    EVT_HANDLE queryResults =
         EvtQuery(nullptr,
                  stringToWstring(channel).c_str(),
                  stringToWstring(searchQuery).c_str(),
@@ -198,6 +208,7 @@ QueryData genWindowsEventLog(QueryContext& context) {
       return {};
     }
     parseQueryResults(queryResults, results);
+    EvtClose(queryResults);
   }
 
   return results;
