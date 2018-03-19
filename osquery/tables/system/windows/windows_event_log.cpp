@@ -21,21 +21,23 @@
 #include "osquery/core/windows/wmi.h"
 #include "osquery/filesystem/fileops.h"
 
-// TODO: Clean this shit up.
-using namespace rapidxml;
+namespace rx = rapidxml;
 
 namespace osquery {
 namespace tables {
 
+const std::string kEventLogXmlPrefix = "<QueryList><Query Id=\"0\">";
+const std::string kEventLogXmlSuffix = "</Query></QueryList>";
+
 const int kNumEventsBlock = 1024;
 
 void parseWelXml(std::string& xml, Row& r) {
-  xml_document<char> doc;
+  rx::xml_document<char> doc;
   doc.parse<0>(&xml[0]);
 
   auto root = doc.first_node("Event");
   // First parse the system details
-  xml_node<>* system = root->first_node("System");
+  rx::xml_node<>* system = root->first_node("System");
 
   // All event records should have an EventID
   r["eventid"] = system->first_node("EventID") != nullptr
@@ -105,7 +107,7 @@ void parseWelXml(std::string& xml, Row& r) {
   JSON document;
   auto eventData = root->first_node("EventData");
   unsigned int cnt = 0;
-  for (xml_node<>* node = eventData->first_node(); node;
+  for (rx::xml_node<>* node = eventData->first_node(); node;
        node = node->next_sibling()) {
     if (node->first_attribute("Name") == nullptr) {
       // In the event the log has no labeling for event data, we generate a
@@ -115,7 +117,7 @@ void parseWelXml(std::string& xml, Row& r) {
       cnt++;
     } else {
       document.add(node->first_attribute("Name")->value(), node->value());
-    }  
+    }
   }
   std::string data{""};
   document.toString(data);
@@ -187,21 +189,19 @@ QueryData genWindowsEventLog(QueryContext& context) {
   auto channels = context.constraints["source"].getAll(EQUALS);
   auto eids = context.constraints["eventid"].getAll(EQUALS);
 
+  std::string eidList = osquery::join(eids, " or EventID =");
+  std::string welSearchQuery = kEventLogXmlPrefix;
   for (const auto& channel : channels) {
-    std::string searchQuery =
-      "Event/" + channel;
-    if (!eids.empty()) {
-      searchQuery += "[";
-      for (const auto& eid : eids) {
-        searchQuery += "EventID=" + eid + "|";
-      }
-      searchQuery.replace(searchQuery.size()-1, 1, "]");
-    }
-    EVT_HANDLE queryResults =
+    welSearchQuery += "<Select Path=\"" + channel + "\">";
+    welSearchQuery += "*[System[(EventID=" + eidList + ")]]";
+    welSearchQuery += "</Select>" + kEventLogXmlSuffix;
+
+    auto queryResults =
         EvtQuery(nullptr,
                  stringToWstring(channel).c_str(),
-                 stringToWstring(searchQuery).c_str(),
+                 stringToWstring(welSearchQuery).c_str(),
                  EvtQueryChannelPath | EvtQueryReverseDirection);
+
     if (queryResults == nullptr) {
       LOG(WARNING) << "Failed to search event log for query with "
                    << GetLastError();
