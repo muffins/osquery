@@ -23,30 +23,32 @@ namespace pt = boost::property_tree;
 
 namespace osquery {
 
-constexpr size_t kTLSMaxLogLines = 1024;
+constexpr size_t kSplunkMaxLogLines = 1024;
 
-FLAG(string, logger_tls_endpoint, "", "TLS/HTTPS endpoint for results logging");
+FLAG(string, splunk_endpoint, "", "TLS/HTTPS endpoint for results logging");
+
+FLAG(string, splunk_api_token, "", "HTTP Event Collector Token for Splunk");
 
 FLAG(uint64,
-     logger_tls_period,
+     splunk_tls_period,
      4,
      "Seconds between flushing logs over TLS/HTTPS");
 
 FLAG(uint64,
-     logger_tls_max,
+     splunk_tls_max,
      1 * 1024 * 1024,
      "Max size in bytes allowed per log line");
 
-FLAG(bool, logger_tls_compress, false, "GZip compress TLS/HTTPS request body");
+FLAG(bool, splunk_tls_compress, false, "GZip compress TLS/HTTPS request body");
 
-REGISTER(TLSLoggerPlugin, "logger", "tls");
+REGISTER(SplunkLoggerPlugin, "logger", "splunk");
 
 TLSLogForwarder::TLSLogForwarder()
-    : BufferedLogForwarder("TLSLogForwarder",
-                           "tls",
-                           std::chrono::seconds(FLAGS_logger_tls_period),
-                           kTLSMaxLogLines) {
-  uri_ = TLSRequestHelper::makeURI(FLAGS_logger_tls_endpoint);
+    : BufferedLogForwarder("SplunkLogForwarder",
+                           "splunk",
+                           std::chrono::seconds(FLAGS_splunk_tls_period),
+                           kSplunkMaxLogLines) {
+  uri_ = TLSRequestHelper::makeURI(FLAGS_splunk_endpoint);
 }
 
 Status TLSLoggerPlugin::logString(const std::string& s) {
@@ -84,8 +86,8 @@ void TLSLoggerPlugin::init(const std::string& name,
 
 Status TLSLogForwarder::send(std::vector<std::string>& log_data,
                              const std::string& log_type) {
-  JSON params;
-  params.add("node_key", getNodeKey("tls"));
+  JSON params
+  params.add("Authorization", "Splunk " + FLAGS_splunk_logger_token);
   params.add("log_type", log_type);
 
   {
@@ -118,7 +120,8 @@ Status TLSLogForwarder::send(std::vector<std::string>& log_data,
     params.add("_compress", true);
   }
 
-  // return TLSRequestHelper::go<JSONSerializer>(uri_, params, response);
+
+  //return TLSRequestHelper::go<JSONSerializer>(uri_, params, response);
   pt::ptree splunk_params;
   splunk_params.add_child("event", params);
   return TLSRequestHelper::go<JSONSerializer>(uri_, splunk_params, response);
