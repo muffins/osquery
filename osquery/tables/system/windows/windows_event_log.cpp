@@ -103,22 +103,29 @@ void parseWelXml(std::string& xml, Row& r) {
   }
 
   // Next parse the event data fields
-  // std::map<std::string, std::string> data;
   JSON document;
-  auto eventData = root->first_node("EventData");
-  unsigned int cnt = 0;
-  for (rx::xml_node<>* node = eventData->first_node(); node;
-       node = node->next_sibling()) {
-    if (node->first_attribute("Name") == nullptr) {
-      // In the event the log has no labeling for event data, we generate a
-      // label similar to how Windows labels data values, paramX
-      LOG(WARNING) << "Generating data label for Event Data child with no name";
-      document.add("param" + std::to_string(cnt), node->value());
-      cnt++;
-    } else {
-      document.add(node->first_attribute("Name")->value(), node->value());
+  // auto eventData = root->first_node("EventData");
+  unsigned int paramCnt = 0;
+
+  for (auto eventData = system->next_sibling(); eventData;
+       eventData = eventData->next_sibling()) {
+    JSON evtDataBlock;
+
+    for (auto node = eventData->first_node(); node;
+         node = node->next_sibling()) {
+      if (node->first_attribute("Name") == nullptr) {
+        // Append a counter as Windows event data can contain multiple <Data>
+        // elements
+        evtDataBlock.add("Data" + std::to_string(paramCnt), node->value());
+        paramCnt++;
+      } else {
+        evtDataBlock.add(node->first_attribute("Name")->value(), node->value());
+      }
     }
+
+    document.push(evtDataBlock.getArray());
   }
+
   std::string data{""};
   document.toString(data);
   r["data"] = data;
@@ -189,11 +196,14 @@ QueryData genWindowsEventLog(QueryContext& context) {
   auto channels = context.constraints["source"].getAll(EQUALS);
   auto eids = context.constraints["eventid"].getAll(EQUALS);
 
-  std::string eidList = osquery::join(eids, " or EventID =");
+  std::string eidList =
+      eids.empty()
+          ? "*"
+          : "*[System[(EventID=" + osquery::join(eids, " or EventID =") + ")]]";
   std::string welSearchQuery = kEventLogXmlPrefix;
   for (const auto& channel : channels) {
     welSearchQuery += "<Select Path=\"" + channel + "\">";
-    welSearchQuery += "*[System[(EventID=" + eidList + ")]]";
+    welSearchQuery += eidList;
     welSearchQuery += "</Select>" + kEventLogXmlSuffix;
 
     auto queryResults =
