@@ -130,7 +130,15 @@ static void ptree_to_json(const pt::ptree& pt_in, const JSON& rj_in) {
   EXPECT_TRUE(rj_out.fromString(conversion_out));
 
   /* Compare original rj with output */
-  EXPECT_EQ(rj_in.doc(), rj_out.doc());
+  std::string ptree_converted{""};
+  std::string rjin_expected{""};
+
+  auto s = rj_in.toString(rjin_expected);
+  EXPECT_TRUE(s.ok());
+  s = rj_out.toString(ptree_converted);
+  EXPECT_TRUE(s.ok());
+
+  EXPECT_EQ(ptree_converted, rjin_expected);
 }
 
 TEST_F(DatabaseTests, test_ptree_to_rj_empty) {
@@ -149,8 +157,10 @@ TEST_F(DatabaseTests, test_ptree_to_rj_object) {
   pt::ptree pt_in;
   pt_in.put("k", "v");
 
-  JSON rj_in = JSON::newObject();
-  rj_in.add("k", "v");
+  JSON rj_in = JSON::newArray();
+  JSON rj_obj = rj_in.newObject();
+  rj_obj.add("k", "v");
+  rj_in.push(rj_obj.doc(), rj_in.doc());
 
   ptree_to_json(pt_in, rj_in);
 }
@@ -158,9 +168,12 @@ TEST_F(DatabaseTests, test_ptree_to_rj_object) {
 TEST_F(DatabaseTests, test_ptree_to_rj_array) {
   /* '{ "" : "a", "" : "b" }' */
 
-  pt::ptree pt_in;
-  pt_in.put("", "a");
-  pt_in.put("", "b");
+  pt::ptree pt_in, child1, child2, children;
+  child1.put("", "a");
+  child2.put("", "b");
+
+  pt_in.add_child("", child1);
+  pt_in.add_child("", child2);
 
   JSON rj_in = JSON::newArray();
   rj_in.pushCopy("a");
@@ -172,9 +185,13 @@ TEST_F(DatabaseTests, test_ptree_to_rj_array) {
 TEST_F(DatabaseTests, test_ptree_to_rj_array_objects) {
   /* '{ "" : { "ka" : "va" } , "" : { "kb" : "vb" } }' */
 
-  pt::ptree pt_in;
-  pt_in.put(".ka", "va");
-  pt_in.put(".kb", "vb");
+  pt::ptree pt_in, child1, child2;
+
+  child1.put("ka", "va");
+  child2.put("kb", "vb");
+
+  pt_in.add_child("", child1);
+  pt_in.add_child("", child2);
 
   JSON rj_in = JSON::newArray();
   JSON obj1 = rj_in.newObject();

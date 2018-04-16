@@ -366,16 +366,31 @@ Status ptreeToRapidJSON(const std::string& in, std::string& out) {
     return Status(1, "Failed to parse JSON");
   }
 
+  if (tree.empty()) {
+    JSON().toString(out);
+    return Status();
+  }
+
   auto json = JSON::newArray();
   for (const auto& t : tree) {
-    std::stringstream ss;
-    pt::write_json(ss, t.second);
+    JSON obj = json.newObject();
 
-    rj::Document row;
-    if (row.Parse(ss.str()).HasParseError()) {
-      return Status(1, "Failed to serialize JSON");
+    if (!t.second.empty()) {
+      // if the node is a subtree, we parse this directly with RJ
+      std::stringstream ss;
+      pt::write_json(ss, t.second);
+      if (obj.doc().Parse(ss.str()).HasParseError()) {
+        return Status(1, "Failed to serialize JSON");
+      }
+      json.push(obj.doc(), json.doc());
+    } else if (t.first.empty()) {
+      // If the node is a list item, add to the list directly
+      json.pushCopy(t.second.data());
+    } else {
+      // Otherwise, add the key/value pair
+      obj.add(t.first, t.second.data());
+      json.push(obj.doc(), json.doc());
     }
-    json.push(row);
   }
 
   json.toString(out);
