@@ -11,12 +11,12 @@
 # $version - The version of the software package to build
 # $chocoVersion - The chocolatey package version, used for incremental bumps
 #                 without changing the version of the software package
-$version = '4.0.1'
-$chocoVersion = '4.0.1'
+$version = '6.0.0'
+$chocoVersion = '6.0.0'
 $packageName = 'llvm-clang'
 $projectSource = 'http://llvm.org/git/llvm.git'
 $packageSourceUrl = 'http://llvm.org/git/llvm.git'
-$packageDigest = '139BA95F9F88199CDC419A674F0A85DF3568367623486336843207A4982E36E9'
+$packageDigest = '2501887b2f638d3f65b0336f354b96f8108b563522d81e841d5c88c34af283dd'
 $authors = 'llvm'
 $owners = 'llvm'
 $copyright = 'Copyright (c) 2003-2017 University of Illinois at Urbana-Champaign.'
@@ -53,10 +53,10 @@ Set-Location $chocoBuildPath
 # Retreive the source
 if (-not (Test-Path "$packageName-$version.exe")) {
   Invoke-WebRequest $url -OutFile "$packageName-$version.exe"
-  if ($(Get-FileHash -Algorithm sha256 "$packageName-$version.exe").Hash -ne `
+  if ($(Get-FileHash -Algorithm sha256 "$packageName-$version.exe").Hash.ToLower() -ne `
         $packageDigest) {
-    Write-Host '[-] Download of package failed! Check connection.' `
-               -foregroundcolor Red
+    Write-Host '[-] Package checksum mismatch, download may have failed, check connection.' `
+               -foregroundcolor Yellow
   }
 }
 
