@@ -8,8 +8,10 @@
  *  You may select, at your option, one of the above-listed licenses.
  */
 
-#include "osquery/core/windows/process_ops.h"
+#include <osquery/system.h>
+
 #include "osquery/core/conversions.h"
+#include "osquery/core/windows/process_ops.h"
 
 namespace osquery {
 
@@ -146,6 +148,31 @@ int platformGetUid() {
   return getUidFromSid(tu->User.Sid);
 }
 
+// Helper function to get a HANDLE to the named Stop Event for child processes
+HANDLE getOsqueryEvent(const std::string& eventName) {
+  auto osqueryEvent =
+      OpenEventA(SYNCHRONIZE | EVENT_MODIFY_STATE, FALSE, eventName.c_str());
+
+  if (osqueryEvent == nullptr) {
+    return osqueryEvent;
+  }
+
+  auto ret = WaitForSingleObject(osqueryEvent, 0);
+
+  // The object has already been signaled
+  if (ret == WAIT_OBJECT_0) {
+    return nullptr;
+  }
+
+  // ERROR_FILE_NOT_FOUND indicates the event was never created.
+  // Likely the process running as the daemon at the command line.
+  if (osqueryEvent == nullptr && GetLastError() != ERROR_FILE_NOT_FOUND) {
+    LOG(ERROR) << "OpenEvent failed for " << eventName << " with "
+               << GetLastError();
+  }
+  return osqueryEvent;
+}
+
 bool isLauncherProcessDead(PlatformProcess& launcher) {
   unsigned long code = 0;
   if (launcher.nativeHandle() == INVALID_HANDLE_VALUE) {
@@ -241,5 +268,12 @@ int platformGetPid() {
 
 int platformGetTid() {
   return static_cast<int>(GetCurrentThreadId());
+}
+
+void platformThreadExit(int excode) {
+  if (isWatcher()) {
+    ExitThread(excode);
+  }
+  exit(excode);
 }
 }
