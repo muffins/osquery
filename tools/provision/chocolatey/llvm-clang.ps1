@@ -29,9 +29,6 @@ $workingDir = Get-Location
 # Invoke our utilities file
 . $(Join-Path $parentPath "osquery_utils.ps1")
 
-# Invoke the MSVC developer tools/env
-Invoke-BatchFile "$env:VS140COMNTOOLS\..\..\vc\vcvarsall.bat" amd64
-
 # Time our execution
 $sw = [System.Diagnostics.StopWatch]::startnew()
 
@@ -44,6 +41,7 @@ if ($buildPath -eq '') {
   Write-Host '[-] Failed to find source root' -foregroundcolor red
   exit
 }
+
 $chocoBuildPath = "$buildPath\chocolatey\$packageName"
 if (-not (Test-Path "$chocoBuildPath")) {
   New-Item -Force -ItemType Directory -Path "$chocoBuildPath"
@@ -55,8 +53,8 @@ if (-not (Test-Path "$packageName-$version.exe")) {
   Invoke-WebRequest $url -OutFile "$packageName-$version.exe"
   if ($(Get-FileHash -Algorithm sha256 "$packageName-$version.exe").Hash.ToLower() -ne `
         $packageDigest) {
-    Write-Host '[-] Package checksum mismatch, download may have failed, check connection.' `
-               -foregroundcolor Yellow
+    $msg = '[-] Package checksum mismatch, check connection'
+    Write-Host $msg -foregroundcolor Yellow
   }
 }
 

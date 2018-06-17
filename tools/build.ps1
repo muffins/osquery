@@ -138,6 +138,11 @@ function Invoke-OsqueryMsbuild {
   return $ret
 }
 
+# A function to use clang to build our project
+function Invoke-OsqueryClangBuild {
+  
+}
+
 # A function for running cmake to generate the osquery solution,
 # building the osquery project, and lastly running our tests
 function Invoke-OsqueryBuild {
