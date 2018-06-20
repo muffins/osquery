@@ -1,0 +1,7 @@
+
+table_name("boot_info")
+description("Parses the Windows TCG log to show information relating to boot attestation, such as PCR values.")
+schema([
+  Column("val", TEXT, "stuff."),
+])
+implementation("boot_info@genBootInfo")

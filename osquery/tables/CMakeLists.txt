@@ -54,6 +54,7 @@ if(WINDOWS)
   set(TABLE_PLATFORM "windows")
 
   # Additional Windows libraries
+  ADD_OSQUERY_LINK_ADDITIONAL("Tbs.lib")
   ADD_OSQUERY_LINK_ADDITIONAL("crypt32.lib")
   ADD_OSQUERY_LINK_ADDITIONAL("Wintrust.lib")
   ADD_OSQUERY_LINK_ADDITIONAL("Advapi32.lib")
