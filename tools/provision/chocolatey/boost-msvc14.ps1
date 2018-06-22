@@ -14,7 +14,7 @@
 # $chocoVersion - The chocolatey package version, used for incremental bumps
 #                 without changing the version of the software package
 $version = '1.66.0'
-$chocoVersion = '1.66.0'
+$chocoVersion = '1.66.0-r1'
 $versionUnderscores = $version -replace '\.', '_'
 $packageName = 'boost-msvc14'
 $projectSource = `
@@ -87,7 +87,7 @@ if (-not (Test-Path $b2)) {
 
 $installPrefix = 'stage'
 $arch = '64'
-$toolset = 'msvc-14.0'
+$toolset = 'msvc-14.1'
 # Build the boost libraries
 $b2x64args = @(
   "-j$numJobs",

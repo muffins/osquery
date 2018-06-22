@@ -460,7 +460,7 @@ QueryData genRows(EventSubscriberPlugin* sub) {
     results.push_back(generator.get());
     generator();
   }
-  delete vtc;
+  //delete vtc;
   return results;
 }
 
