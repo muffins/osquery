@@ -157,19 +157,12 @@ void genProcess(const WmiResultItem& result, QueryData& results_data) {
   s = result.GetLong("ProcessId", pid);
   r["pid"] = s.ok() ? BIGINT(pid) : BIGINT(-1);
 
-  long uid = -1;
-  long gid = -1;
   HANDLE hProcess = nullptr;
   if (pid == currentPid) {
     hProcess = GetCurrentProcess();
   } else {
     hProcess =
         OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, false, pid);
-  }
-
-  if (GetLastError() == ERROR_ACCESS_DENIED) {
-    uid = 0;
-    gid = 0;
   }
 
   result.GetString("Name", r["name"]);
@@ -230,15 +223,29 @@ void genProcess(const WmiResultItem& result, QueryData& results_data) {
 
   /// Get the process UID and GID from its SID
   HANDLE tok = nullptr;
-  std::vector<char> tokUser(sizeof(TOKEN_USER), 0x0);
+  std::vector<char> tok_user(sizeof(TOKEN_USER), 0x0);
+  std::vector<char> tok_group(sizeof(TOKEN_PRIMARY_GROUP), 0x0);
+
+  BOOL gret = FALSE;
+  BOOL uret = FALSE;
+
   auto ret = OpenProcessToken(hProcess, TOKEN_READ, &tok);
   if (ret != 0 && tok != nullptr) {
-    unsigned long tokOwnerBuffLen;
-    ret = GetTokenInformation(tok, TokenUser, nullptr, 0, &tokOwnerBuffLen);
-    if (ret == 0 && GetLastError() == ERROR_INSUFFICIENT_BUFFER) {
-      tokUser.resize(tokOwnerBuffLen);
-      ret = GetTokenInformation(
-          tok, TokenUser, tokUser.data(), tokOwnerBuffLen, &tokOwnerBuffLen);
+    // Get the token user
+    unsigned long tok_len;
+    uret = GetTokenInformation(tok, TokenUser, tok_user.data(), static_cast<unsigned long>(tok_user.size()), &tok_len);
+    if (uret == 0 && GetLastError() == ERROR_INSUFFICIENT_BUFFER) {
+      tok_user.resize(tok_len);
+      uret = GetTokenInformation(
+          tok, TokenUser, tok_user.data(), static_cast<unsigned long>(tok_user.size()), &tok_len);
+    }
+
+    // Get the token primary groupd
+    gret = GetTokenInformation(tok, TokenPrimaryGroup, tok_group.data(), static_cast<unsigned long>(tok_group.size()), &tok_len);
+    if (gret == 0 && GetLastError() == ERROR_INSUFFICIENT_BUFFER) {
+      tok_group.resize(tok_len);
+      gret = GetTokenInformation(
+          tok, TokenPrimaryGroup, tok_group.data(), static_cast<unsigned long>(tok_group.size()), &tok_len);
     }
 
     // Check if the process is using an elevated token
@@ -252,14 +259,21 @@ void genProcess(const WmiResultItem& result, QueryData& results_data) {
 
     r["is_elevated_token"] = elevated ? INTEGER(1) : INTEGER(0);
   }
-  if (uid != 0 && ret != 0 && !tokUser.empty()) {
-    auto sid = PTOKEN_OWNER(tokUser.data())->Owner;
-    r["uid"] = INTEGER(getUidFromSid(sid));
-    r["gid"] = INTEGER(getGidFromSid(sid));
-  } else {
-    r["uid"] = INTEGER(uid);
-    r["gid"] = INTEGER(gid);
+
+  long uid = -1;
+  long gid = -1;
+  if (uret != FALSE && !tok_user.empty()) {
+    auto sid = PTOKEN_OWNER(tok_user.data())->Owner;
+    uid = getUidFromSid(sid);
   }
+
+  if (gret != FALSE && !tok_group.empty()) {
+    auto sid = PTOKEN_OWNER(tok_group.data())->Owner;
+    gid = getGidFromSid(sid);
+  }
+
+  r["uid"] = INTEGER(uid);
+  r["gid"] = INTEGER(gid);
 
   if (hProcess != nullptr) {
     CloseHandle(hProcess);

@@ -8,8 +8,8 @@
  *  You may select, at your option, one of the above-listed licenses.
  */
 
-#include "osquery/core/windows/process_ops.h"
 #include "osquery/core/conversions.h"
+#include "osquery/core/windows/process_ops.h"
 
 namespace osquery {
 
@@ -32,6 +32,7 @@ int getUidFromSid(PSID sid) {
     LocalFree(sidString);
     return uid;
   }
+  VLOG(1) << "Looking up RID for sid " << sidString;
   auto toks = osquery::split(sidString, "-");
 
   if (toks.size() < 1) {
@@ -52,31 +53,31 @@ int getUidFromSid(PSID sid) {
 }
 
 int getGidFromSid(PSID sid) {
-  auto eUse = SidTypeUnknown;
-  unsigned long unameSize = 0;
-  unsigned long domNameSize = 1;
+  auto euse = SidTypeUnknown;
+  unsigned long uname_size = 0;
+  unsigned long dom_name_size = 1;
 
   // LookupAccountSid first gets the size of the username buff required.
   LookupAccountSidW(
-      nullptr, sid, nullptr, &unameSize, nullptr, &domNameSize, &eUse);
-  std::vector<wchar_t> uname(unameSize);
-  std::vector<wchar_t> domName(domNameSize);
+      nullptr, sid, nullptr, &uname_size, nullptr, &dom_name_size, &euse);
+  std::vector<wchar_t> uname(uname_size);
+  std::vector<wchar_t> dom_name(dom_name_size);
   auto ret = LookupAccountSidW(nullptr,
                                sid,
                                uname.data(),
-                               &unameSize,
-                               domName.data(),
-                               &domNameSize,
-                               &eUse);
+                               &uname_size,
+                               dom_name.data(),
+                               &dom_name_size,
+                               &euse);
 
   if (ret == 0) {
     return -1;
   }
   // USER_INFO_3 struct contains the RID (uid) of our user
-  unsigned long userInfoLevel = 3;
+  unsigned long user_info_level = 3;
   unsigned char* userBuff = nullptr;
   unsigned long gid = -1;
-  ret = NetUserGetInfo(nullptr, uname.data(), userInfoLevel, &userBuff);
+  ret = NetUserGetInfo(nullptr, uname.data(), user_info_level, &userBuff);
 
   if (ret == NERR_UserNotFound) {
     LPTSTR sidString;
@@ -290,4 +291,4 @@ int platformGetTid() {
 void platformMainThreadExit(int excode) {
   ExitThread(excode);
 }
-}
+} // namespace osquery
