@@ -7,13 +7,13 @@ class Boost < AbstractOsqueryFormula
   url "https://downloads.sourceforge.net/project/boost/boost/1.66.0/boost_1_66_0.tar.bz2"
   sha256 "5721818253e6a0989583192f96782c4a98eb6204965316df9f5ad75819225ca9"
   head "https://github.com/boostorg/boost.git"
-  revision 200
+  revision 300
 
   bottle do
     root_url "https://osquery-packages.s3.amazonaws.com/bottles"
     cellar :any_skip_relocation
     sha256 "260f6810e5d1276f1866aff5bf0e997c12ed8ab46617ce16f5e985230ca8f062" => :sierra
-    sha256 "2807ae0b29f9aae8a6eccd36e297f7ff902742bef8d7b9fb0dadbeb99341c6ca" => :x86_64_linux
+    sha256 "0930fdd0693f199c312cb7024442ffb86daedef4064297fedacfeee2a54a11fc" => :x86_64_linux
   end
 
   depends_on "bzip2" unless OS.mac?
@@ -38,12 +38,6 @@ class Boost < AbstractOsqueryFormula
       "--layout=tagged",
       "--ignore-site-config",
       "--disable-icu",
-      "--with-filesystem",
-      "--with-regex",
-      "--with-system",
-      "--with-thread",
-      "--with-coroutine",
-      "--with-context",
       "threading=multi",
       "link=static",
       "optimization=space",
