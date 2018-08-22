@@ -20,6 +20,11 @@
 
 namespace osquery {
 
+FLAG(bool,
+     disable_process_events,
+     true,
+     "Enable the Windows process events subscriber.");
+
 // {22FB2CD6-0E7B-422B-A0C7-2FAD1FD0E716}
 // Microsoft-Windows-Kernel-Process
 const GUID kProcessEventsGuid = {
@@ -28,37 +33,40 @@ const GUID kProcessEventsGuid = {
   0x422B,
   { 0xA0, 0xC7, 0x2F, 0xAD, 0x1F, 0xD0, 0xE7, 0x16 } };
 
-class WindowsEtwSocketSubscriber
+class WindowsEtwProcessEventSubscriber
     : public EventSubscriber<WindowsEtwEventPublisher> {
- public:
+ public:  
   Status init() override {
+    if (FLAGS_disable_process_events) {
+      return Status(1, "Process event subscriber disabled via configuration");
+    }
+
     auto wc = createSubscriptionContext();
     wc->guid = kProcessEventsGuid;
-    subscribe(&WindowsEtwSocketSubscriber::Callback, wc);
+    subscribe(&WindowsEtwProcessEventSubscriber::Callback, wc);
     return Status(0, "OK");
   }
 
   Status Callback(const ECRef& ec, const SCRef& sc);
 };
 
-REGISTER(WindowsEtwSocketSubscriber,
+REGISTER(WindowsEtwProcessEventSubscriber,
          "event_subscriber",
-         "windows_etw_socket_events");
+         "windows_etw_process_events");
 
-Status WindowsEtwSocketSubscriber::Callback(const ECRef& ec, const SCRef& sc) {
+Status WindowsEtwProcessEventSubscriber::Callback(const ECRef& ec,
+                                                  const SCRef& sc) {
   Row r;
 
   r["timestamp"] = BIGINT(ec->timestamp);
-  r["uptime"] = BIGINT(ec->uptime);
-  r["remote_address"] = "";
+  r["pid"] = "";
+  r["path"] = "";
   
   VLOG(1) << "Event - " << ec->eventId << " " << static_cast<int>(ec->level);
 
   for (const auto& kv : ec->eventData) {
     VLOG(1) << "Evt[" << kv.first << "] - " << kv.second;
   }
-
-  r["data"] = "";
 
   add(r);
   return Status(0, "OK");

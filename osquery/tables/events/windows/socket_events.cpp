@@ -20,33 +20,42 @@
 
 namespace osquery {
 
+FLAG(bool,
+     disable_socket_events,
+     true,
+     "Enable the Windows socket events subscriber.");
+
 // {E53C6823-7BB8-44BB-90DC-3F86090D48A6}
 // Socket events, we can maybe go a level higher?
-
 const GUID kSocketEventsGuid = {
   0xE53C6823,
   0x7BB8,
   0x44BB,
   { 0x90, 0XDC, 0x3F, 0x86, 0x09, 0x0D, 0x48, 0xA6 } };
 
-class WindowsEtwSocketSubscriber
+class WindowsEtwSocketEventSubscriber
     : public EventSubscriber<WindowsEtwEventPublisher> {
  public:
   Status init() override {
+    if (FLAGS_disable_socket_events) {
+      return Status(1, "Socket event subscriber disabled via configuration");
+    }
+
     auto wc = createSubscriptionContext();
     wc->guid = kSocketEventsGuid;
-    subscribe(&WindowsEtwSocketSubscriber::Callback, wc);
+    subscribe(&WindowsEtwSocketEventSubscriber::Callback, wc);
     return Status(0, "OK");
   }
 
   Status Callback(const ECRef& ec, const SCRef& sc);
 };
 
-REGISTER(WindowsEtwSocketSubscriber,
+REGISTER(WindowsEtwSocketEventSubscriber,
          "event_subscriber",
          "windows_etw_socket_events");
 
-Status WindowsEtwSocketSubscriber::Callback(const ECRef& ec, const SCRef& sc) {
+Status WindowsEtwSocketEventSubscriber::Callback(const ECRef& ec,
+                                                 const SCRef& sc) {
   Row r;
 
   r["timestamp"] = BIGINT(ec->timestamp);
