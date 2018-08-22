@@ -10,6 +10,8 @@
 
 #include <osquery/flags.h>
 #include <osquery/logger.h>
+#include <osquery/registry_factory.h>
+#include <osquery/system.h>
 
 #include "osquery/core/windows/wmi.h"
 #include "osquery/events/windows/windows_etw.h"
@@ -276,4 +278,4 @@ bool WindowsEtwEventPublisher::shouldFire(
 bool WindowsEtwEventPublisher::isSubscriptionActive() const {
   return etw_handles_.empty();
 }
-}
+} // namespace osquery

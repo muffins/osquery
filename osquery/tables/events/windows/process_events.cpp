@@ -20,21 +20,20 @@
 
 namespace osquery {
 
-// {E53C6823-7BB8-44BB-90DC-3F86090D48A6}
-// Socket events, we can maybe go a level higher?
-
-const GUID kSocketEventsGuid = {
-  0xE53C6823,
-  0x7BB8,
-  0x44BB,
-  { 0x90, 0XDC, 0x3F, 0x86, 0x09, 0x0D, 0x48, 0xA6 } };
+// {22FB2CD6-0E7B-422B-A0C7-2FAD1FD0E716}
+// Microsoft-Windows-Kernel-Process
+const GUID kProcessEventsGuid = {
+  0x22FB2CD6,
+  0x0E7B,
+  0x422B,
+  { 0xA0, 0xC7, 0x2F, 0xAD, 0x1F, 0xD0, 0xE7, 0x16 } };
 
 class WindowsEtwSocketSubscriber
     : public EventSubscriber<WindowsEtwEventPublisher> {
  public:
   Status init() override {
     auto wc = createSubscriptionContext();
-    wc->guid = kSocketEventsGuid;
+    wc->guid = kProcessEventsGuid;
     subscribe(&WindowsEtwSocketSubscriber::Callback, wc);
     return Status(0, "OK");
   }
