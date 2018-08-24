@@ -21,7 +21,7 @@ namespace osquery {
 
 REGISTER(WindowsEtwEventPublisher, "event_publisher", "windows_etw");
 
-const std::string kOsqueryEtwSessionName = "osquery etw trace session";
+const std::string kOsqueryEtwSessionName = "osquery-etw-trace";
 
 static const GUID kOsquerySessionGuid = {
     0x22377e0a,
@@ -43,8 +43,7 @@ void WindowsEtwEventPublisher::configure() {
   sessionProperties->Wnode.BufferSize = buffSize;
   sessionProperties->Wnode.Flags = WNODE_FLAG_TRACED_GUID;
   sessionProperties->Wnode.ClientContext = 1;
-  sessionProperties->LogFileMode =
-      EVENT_TRACE_REAL_TIME_MODE | EVENT_TRACE_NO_PER_PROCESSOR_BUFFERING;
+  sessionProperties->LogFileMode = EVENT_TRACE_REAL_TIME_MODE;
   sessionProperties->MaximumFileSize = 1;
   sessionProperties->LoggerNameOffset = sizeof(EVENT_TRACE_PROPERTIES);
   sessionProperties->LogFileNameOffset =
@@ -55,9 +54,11 @@ void WindowsEtwEventPublisher::configure() {
     auto sc = getSubscriptionContext(sub->context);
     sessionProperties->Wnode.Guid = sc->guid;
 
-    PTRACEHANDLE sessionHandle = 0;
-    auto status = StartTrace(sessionHandle,
-                             (LPCSTR)kOsqueryEtwSessionName.c_str(),
+    PTRACEHANDLE sessionHandle;
+    auto session_name = kOsqueryEtwSessionName +
+                        "-" + 
+                        std::to_string(sc->guid.Data1) + "-" + std::to_string(rand());
+    auto status = StartTrace(sessionHandle, (LPCSTR)session_name.c_str(),
                              sessionProperties);
 
     // If the trace already exists, stop it and restart
