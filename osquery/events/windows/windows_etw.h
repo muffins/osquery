@@ -37,6 +37,12 @@ struct WindowsEtwSubscriptionContext : public SubscriptionContext {
   /// The GUID of the ETW provider to which we'll subscribe
   GUID guid;
 
+  /// A friendly name of the ETW session trace, used for controlling the session
+  std::string trace_name;
+
+  /// The keywords which we will filter on as a bitwise OR
+  unsigned long keywords;
+
  private:
   friend class WindowsEtwEventPublisher;
 };
@@ -115,12 +121,11 @@ class WindowsEtwEventPublisher
   /// Vector of all provider GUIDs on which we'll begin traces
   std::vector<GUID> providerGuids_;
 
-  /// Map of all GUIDs to handles for all event traces
-  // std::map<GUID, TRACEHANDLE> etw_handles_;
-  std::vector<std::pair<GUID, PTRACEHANDLE>> etw_handles_;
+  /// A map of the trace name, to the GUID/Handle pair for ease of access
+  std::map<std::string, std::pair<GUID, TRACEHANDLE>> etw_handles_;
 
  public:
   friend class WindowsEtwTests;
   // FRIEND_TEST(WindowsEtwTests, test_register_event_pub);
 };
-}
+} // namespace osquery

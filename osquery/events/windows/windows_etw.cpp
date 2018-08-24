@@ -32,44 +32,43 @@ static const GUID kOsquerySessionGuid = {
 void WindowsEtwEventPublisher::configure() {
   stop();
 
-  // Start and enable a trace for each GUID we're provided with
-  unsigned long buffSize = sizeof(EVENT_TRACE_PROPERTIES) + MAX_PATH +
-                           sizeof(kOsqueryEtwSessionName);
-
-  auto sessionProperties =
-      static_cast<EVENT_TRACE_PROPERTIES*>(malloc(buffSize));
-
-  ZeroMemory(sessionProperties, buffSize);
-  sessionProperties->Wnode.BufferSize = buffSize;
-  sessionProperties->Wnode.Flags = WNODE_FLAG_TRACED_GUID;
-  sessionProperties->Wnode.ClientContext = 1;
-  sessionProperties->LogFileMode = EVENT_TRACE_REAL_TIME_MODE;
-  sessionProperties->MaximumFileSize = 1;
-  sessionProperties->LoggerNameOffset = sizeof(EVENT_TRACE_PROPERTIES);
-  sessionProperties->LogFileNameOffset =
-      sizeof(EVENT_TRACE_PROPERTIES) +
-      static_cast<unsigned long>(kOsqueryEtwSessionName.size());
-
   for (const auto& sub : subscriptions_) {
     auto sc = getSubscriptionContext(sub->context);
+
+    // Start and enable a trace for each GUID we're provided with
+    unsigned long buffSize = sizeof(EVENT_TRACE_PROPERTIES) + MAX_PATH + static_cast<unsigned long>(sc->trace_name.size());
+
+    auto sessionProperties =
+        static_cast<EVENT_TRACE_PROPERTIES*>(malloc(buffSize));
+
+    ZeroMemory(sessionProperties, buffSize);
+    sessionProperties->Wnode.BufferSize = buffSize;
+    sessionProperties->Wnode.Flags = WNODE_FLAG_TRACED_GUID;
+    sessionProperties->Wnode.ClientContext = 1;
+    sessionProperties->LogFileMode = EVENT_TRACE_REAL_TIME_MODE;
+    sessionProperties->MaximumFileSize = 1;
+    sessionProperties->LoggerNameOffset = sizeof(EVENT_TRACE_PROPERTIES);
+    sessionProperties->LogFileNameOffset =
+        sizeof(EVENT_TRACE_PROPERTIES) +
+        static_cast<unsigned long>(sc->trace_name.size());
+
+  
+    
     sessionProperties->Wnode.Guid = sc->guid;
 
-    PTRACEHANDLE sessionHandle;
-    auto session_name = kOsqueryEtwSessionName +
-                        "-" + 
-                        std::to_string(sc->guid.Data1) + "-" + std::to_string(rand());
-    auto status = StartTrace(sessionHandle, (LPCSTR)session_name.c_str(),
+    TRACEHANDLE sessionHandle = 0;
+    auto status = StartTrace(&sessionHandle, (LPCSTR)sc->trace_name.c_str(),
                              sessionProperties);
 
-    // If the trace already exists, stop it and restart
+    // If the trace already exists, stop it and restart.
     if (status == ERROR_ALREADY_EXISTS) {
       // Pushback a stub GUID for stopping
-      etw_handles_.push_back(std::make_pair(sc->guid, nullptr));
+      etw_handles_[sc->trace_name] = std::make_pair(sc->guid, 0);
 
       stop();
 
       status = StartTrace((PTRACEHANDLE)&sessionHandle,
-                          (LPCSTR)kOsqueryEtwSessionName.c_str(),
+                          (LPCSTR)sc->trace_name.c_str(),
                           sessionProperties);
     }
 
@@ -78,20 +77,20 @@ void WindowsEtwEventPublisher::configure() {
       return;
     }
 
-    etw_handles_.push_back(std::make_pair(sc->guid, sessionHandle));
+    etw_handles_[sc->trace_name] = std::make_pair(sc->guid, sessionHandle);
 
-    status = EnableTraceEx2(*sessionHandle,
+    status = EnableTraceEx2(sessionHandle,
                             (LPCGUID)&sc->guid,
                             EVENT_CONTROL_CODE_ENABLE_PROVIDER,
                             TRACE_LEVEL_INFORMATION,
-                            0,
+                            sc->keywords,
                             0,
                             0,
                             nullptr);
-  }
 
-  if (sessionProperties != nullptr) {
-    free(sessionProperties);
+    if (sessionProperties != nullptr) {
+      free(sessionProperties);
+    }
   }
 }
 
@@ -210,59 +209,66 @@ bool WINAPI WindowsEtwEventPublisher::processEtwRecord(PEVENT_RECORD pEvent) {
   return true;
 }
 
+// TODO: Consider changing return behavior, as we "run" more than one publisher.
 Status WindowsEtwEventPublisher::run() {
-  EVENT_TRACE_LOGFILE trace;
-  ZeroMemory(&trace, sizeof(EVENT_TRACE_LOGFILE));
-  trace.LogFileName = nullptr;
-  trace.LoggerName = (LPSTR)kOsqueryEtwSessionName.c_str();
-  trace.EventCallback = (PEVENT_CALLBACK)processEtwRecord;
-  trace.ProcessTraceMode =
-      PROCESS_TRACE_MODE_EVENT_RECORD | PROCESS_TRACE_MODE_REAL_TIME;
+  
+  for (const auto etw_pair : etw_handles_) {
 
-  auto hTrace = OpenTrace(&trace);
-  if (INVALID_PROCESSTRACE_HANDLE == hTrace) {
-    return Status(1,
-                  "Failed to open the trace for processing with " +
-                      std::to_string(GetLastError()));
-  }
+    EVENT_TRACE_LOGFILE trace;
+    ZeroMemory(&trace, sizeof(EVENT_TRACE_LOGFILE));
+    trace.LogFileName = nullptr;
+    trace.LoggerName = (LPSTR)etw_pair.first.c_str();
+    trace.EventCallback = (PEVENT_CALLBACK)processEtwRecord;
+    trace.ProcessTraceMode =
+        PROCESS_TRACE_MODE_EVENT_RECORD | PROCESS_TRACE_MODE_REAL_TIME;
 
-  // Process the trace in realtime indefinitely
-  auto status = ProcessTrace(&hTrace, 1, 0, 0);
-  if (status != ERROR_SUCCESS && status != ERROR_CANCELLED) {
-    return Status(1, "Failed to process trace with " + std::to_string(status));
+    auto hTrace = OpenTrace(&trace);
+    if (INVALID_PROCESSTRACE_HANDLE == hTrace) {
+      return Status(1,
+                    "Failed to open the trace for processing with " +
+                        std::to_string(GetLastError()));
+    }
+
+    // Process the trace in realtime indefinitely
+    auto status = ProcessTrace(&hTrace, 1, 0, 0);
+    if (status != ERROR_SUCCESS && status != ERROR_CANCELLED) {
+      return Status(1, "Failed to process trace with " + std::to_string(status));
+    }
   }
 
   return Status(0, "OK");
 }
 
 void WindowsEtwEventPublisher::stop() {
-  unsigned long buffSize = sizeof(EVENT_TRACE_PROPERTIES) + MAX_PATH +
-                           sizeof(kOsqueryEtwSessionName);
 
-  auto sessionProperties =
-      static_cast<EVENT_TRACE_PROPERTIES*>(malloc(buffSize));
-  for (auto& etw : etw_handles_) {
+  for (const auto etw_pair : etw_handles_) {
+    
+    unsigned long buffSize = sizeof(EVENT_TRACE_PROPERTIES) + MAX_PATH + static_cast<unsigned long>(etw_pair.first.size());
+
+    auto sessionProperties =
+        static_cast<EVENT_TRACE_PROPERTIES*>(malloc(buffSize));
+ 
     ZeroMemory(sessionProperties, buffSize);
     sessionProperties->Wnode.BufferSize = buffSize;
-    sessionProperties->Wnode.Guid = etw.first;
+    sessionProperties->Wnode.Guid = etw_pair.second.first;
     sessionProperties->LoggerNameOffset = sizeof(EVENT_TRACE_PROPERTIES);
     sessionProperties->LogFileNameOffset =
         sizeof(EVENT_TRACE_PROPERTIES) +
-        static_cast<unsigned long>(kOsqueryEtwSessionName.size());
+        static_cast<unsigned long>(etw_pair.first.size());
 
-    auto status = ControlTrace(*etw.second,
-                               (LPSTR)kOsqueryEtwSessionName.c_str(),
+    auto status = ControlTrace(etw_pair.second.second,
+                               (LPSTR)etw_pair.first.c_str(),
                                sessionProperties,
                                EVENT_TRACE_CONTROL_STOP);
 
     if (status != 0 && status != ERROR_MORE_DATA) {
       LOG(WARNING) << "Failed to stop trace with " << status;
     }
+    if (sessionProperties != nullptr) {
+      free(sessionProperties);
+    }
   }
 
-  if (sessionProperties != nullptr) {
-    free(sessionProperties);
-  }
   etw_handles_.clear();
 }
 

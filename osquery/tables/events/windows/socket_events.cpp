@@ -33,6 +33,9 @@ const GUID kSocketEventsGuid = {
   0x44BB,
   { 0x90, 0XDC, 0x3F, 0x86, 0x09, 0x0D, 0x48, 0xA6 } };
 
+
+const std::string kSocketEventsTraceName{"osquery-socket-events-etw-trace"};
+
 class WindowsEtwSocketEventSubscriber
     : public EventSubscriber<WindowsEtwEventPublisher> {
  public:
@@ -43,6 +46,7 @@ class WindowsEtwSocketEventSubscriber
 
     auto wc = createSubscriptionContext();
     wc->guid = kSocketEventsGuid;
+    wc->trace_name = kSocketEventsTraceName;
     subscribe(&WindowsEtwSocketEventSubscriber::Callback, wc);
     return Status(0, "OK");
   }
@@ -52,7 +56,7 @@ class WindowsEtwSocketEventSubscriber
 
 REGISTER(WindowsEtwSocketEventSubscriber,
          "event_subscriber",
-         "windows_etw_socket_events");
+         "socket_events");
 
 Status WindowsEtwSocketEventSubscriber::Callback(const ECRef& ec,
                                                  const SCRef& sc) {

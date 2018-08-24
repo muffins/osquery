@@ -38,5 +38,10 @@ schema([
 extended_schema(DARWIN, [
     Column("status", BIGINT, "OpenBSM Attribute: Status of the process"),
 ])
+extended_schema(WINDOWS, [
+    Column("type", TEXT, "The type of process event, currently only start or stop."),
+    Column("handles", TEXT, "Only visibile with 'stop' events, indicates the number of handles the process had opened at exit."),
+    Column("handles", TEXT, "Only visibile with 'stop' events, indicates the number of handles the process had opened at exit."),
+])
 attributes(event_subscriber=True)
 implementation("process_events@process_events::genTable")
