@@ -324,17 +324,11 @@ boost::optional<std::string> getHomeDirectory();
  * function will approximate it by using GetNamedSecurityInfoA to obtain the
  * file's owner and group. World is represented by the Everyone group on
  * Windows. Allowed permissions are represented by an access allowed access
- * control entry and unset permissions are represented by an explicit access
- * denied access control entry. However, the Windows preference for ACL ordering
- * creates some problems. For instance, if a user wishes to protect a file by
- * denying world access to a file, the normal standard for ACL ordering will end
- * up denying everyone, including the user, to the file (because of the deny
- * Everyone access control entry that is first in the ACL). To counter this, we
- * have to be more creative with the ACL order which presents some problems for
- * when attempting to modify permissions via File Explorer (complains of a
- * mis-ordered ACL and offers to rectify the problem).
+ * control entry(ACE) and denied permissions are represented by unset values, as
+ * these are treated as access denied ACEs in Windows DACLs, which is what we
+ * process for Windows file permissions.
  */
-bool platformChmod(const std::string& path, mode_t perms);
+bool platformChmod(const std::string& path, mode_t perms, bool set_inherit = false);
 
 /**
  * @brief Multi-platform implementation of glob.

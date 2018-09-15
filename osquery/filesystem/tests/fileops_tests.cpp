@@ -550,9 +550,10 @@ TEST_F(FileOpsTests, test_access) {
 }
 
 TEST_F(FileOpsTests, test_safe_permissions) {
-  const auto root_dir =
-      (fs::temp_directory_path() / "safe-perms-test").string();
-  const auto temp_file = root_dir + "/test";
+  const auto root_path = fs::temp_directory_path() / "safe-perms-test";
+  const auto temp_file = (root_path / "test").string();
+  const auto root_dir = root_path.string();
+
   const int all_access = S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IWGRP |
                          S_IXGRP | S_IROTH | S_IWOTH | S_IXOTH;
 

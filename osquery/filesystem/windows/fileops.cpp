@@ -222,9 +222,9 @@ static std::string globToRegex(const std::string& glob) {
 
 static DWORD getNewAclSize(PACL dacl,
                            PSID sid,
-                           ACL_SIZE_INFORMATION& info,
-                           bool needs_allowed,
-                           bool needs_denied) {
+                           ACL_SIZE_INFORMATION& info) { //,
+  // bool needs_allowed,
+  // bool needs_denied) {
   // This contains the current buffer size of dacl
   DWORD acl_size = info.AclBytesInUse;
 
@@ -235,6 +235,8 @@ static DWORD getNewAclSize(PACL dacl,
    * increment acl_size by the size of the new ACE.
    */
 
+  acl_size += sizeof(ACCESS_ALLOWED_ACE) + ::GetLengthSid(sid) - sizeof(DWORD);
+  /*
   if (needs_allowed) {
     acl_size +=
         sizeof(ACCESS_ALLOWED_ACE) + ::GetLengthSid(sid) - sizeof(DWORD);
@@ -243,6 +245,7 @@ static DWORD getNewAclSize(PACL dacl,
   if (needs_denied) {
     acl_size += sizeof(ACCESS_DENIED_ACE) + ::GetLengthSid(sid) - sizeof(DWORD);
   }
+  */
 
   /*
    * Enumerate the current ACL looking for ACEs associated with sid. Since our
@@ -393,162 +396,6 @@ static Status hasAccess(HANDLE handle, mode_t mode) {
   }
 
   return checkAccessWithSD(sd, mode);
-}
-
-static AclObject modifyAcl(PACL acl,
-                           PSID target,
-                           bool allow_read,
-                           bool allow_write,
-                           bool allow_exec,
-                           bool target_is_owner = false) {
-  if (acl == nullptr || !IsValidAcl(acl) || target == nullptr ||
-      !IsValidSid(target)) {
-    return std::move(AclObject());
-  }
-
-  /*
-   * On POSIX, all users can view the owner, group, world permissions of a file.
-   * To mimic this behavior on Windows, we give READ_CONTROL permissions to
-   * everyone. READ_CONTROL allows for an user to read the target file's DACL.
-   */
-  unsigned long allow_mask = READ_CONTROL;
-  unsigned long deny_mask = 0;
-
-  ACL_SIZE_INFORMATION info = {0};
-  info.AclBytesInUse = sizeof(ACL);
-
-  if (!GetAclInformation(acl, &info, sizeof(info), AclSizeInformation)) {
-    return std::move(AclObject());
-  }
-
-  if (target_is_owner) {
-    /*
-     * Owners should always have the ability to delete the target file and
-     * modify the target file's DACL
-     */
-    allow_mask |= DELETE | WRITE_DAC;
-  }
-
-  /*
-   * We have defined CHMOD_READ, CHMOD_WRITE, and CHMOD_EXECUTE as combinations
-   * of Windows access masks in order to simulate the intended effects of the r,
-   * w, x permissions of POSIX. In order to correctly simulate the permissions,
-   * any permissions set will be explicitly allowed and any permissions that are
-   * unset are explicitly denied. This is all done via access allowed and access
-   * denied ACEs.
-   *
-   * We add additional rights for allow cases because we do not want to pollute
-   * the CHMOD_* with overlapping rights. For instance, adding SYNCHRONIZE to
-   * both CHMOD_READ and CHMOD_EXECUTE will be problematic if execute is denied.
-   * SYNCHRONIZE will be added to a deny access control entry which will prevent
-   * even a GENERIC_READ from occurring.
-   */
-
-  if (allow_read) {
-    allow_mask |= CHMOD_READ | FILE_READ_ATTRIBUTES | SYNCHRONIZE;
-  } else {
-    deny_mask |= CHMOD_READ;
-  }
-
-  if (allow_write) {
-    allow_mask |= CHMOD_WRITE | DELETE | SYNCHRONIZE;
-  } else {
-    // Only deny DELETE if the principal is not the owner
-    if (!target_is_owner) {
-      deny_mask |= DELETE;
-    }
-
-    deny_mask |= CHMOD_WRITE;
-  }
-
-  if (allow_exec) {
-    allow_mask |= CHMOD_EXECUTE | FILE_READ_ATTRIBUTES | SYNCHRONIZE;
-  } else {
-    deny_mask |= CHMOD_EXECUTE;
-  }
-
-  // Only if r and x are denied do we deny FILE_READ_ATTRIBUTES
-  if (!allow_read && !allow_exec) {
-    deny_mask |= FILE_READ_ATTRIBUTES;
-  }
-
-  unsigned long new_acl_size = 0;
-  if (allow_read && allow_write && allow_exec) {
-    new_acl_size = getNewAclSize(acl, target, info, true, false);
-  } else {
-    new_acl_size = getNewAclSize(acl, target, info, true, true);
-  }
-
-  AclObject new_acl_buffer(new unsigned char[new_acl_size]);
-  PACL new_acl = reinterpret_cast<PACL>(new_acl_buffer.get());
-
-  if (!InitializeAcl(new_acl, new_acl_size, ACL_REVISION)) {
-    return std::move(AclObject());
-  }
-
-  /*
-   * Enumerate through the old ACL and copy over all the non-relevant ACEs
-   * (read: ACEs that are inherited and not associated with the specified sid).
-   * We disregard the ACEs associated with our sid in the old ACL and replace
-   * them with updated access masks.
-   *
-   * The curious bit here is how we order things. In normal Windows ACLs, the
-   * ACEs are ordered in a fashion where access denied ACEs have priority to
-   * access allowed ACEs. While this is a strong policy, this doesn't fit into
-   * our use case and in fact, hurts it. Setting 0600 would prevent even the
-   * owner from reading/writing! To counter this, we selectively order the ACEs
-   * in our new ACL to fit our needs. This will generate complaints with tools
-   * that deal with viewing or modifying the ACL (such as File Explorer).
-   */
-
-  unsigned long i = 0;
-  LPVOID void_ent = nullptr;
-  for (i = 0; i < info.AceCount; i++) {
-    if (!GetAce(acl, i, &void_ent)) {
-      return std::move(AclObject());
-    }
-
-    auto entry = static_cast<PACE_HEADER>(void_ent);
-    if ((entry->AceFlags & INHERITED_ACE) == INHERITED_ACE) {
-      break;
-    }
-
-    auto allowed_ace = reinterpret_cast<ACCESS_ALLOWED_ACE*>(entry);
-    auto denied_ace = reinterpret_cast<ACCESS_DENIED_ACE*>(entry);
-    if ((entry->AceType == ACCESS_ALLOWED_ACE_TYPE &&
-         EqualSid(target, &allowed_ace->SidStart)) ||
-        (entry->AceType == ACCESS_DENIED_ACE_TYPE &&
-         EqualSid(target, &denied_ace->SidStart))) {
-      continue;
-    }
-
-    if (!AddAce(new_acl, ACL_REVISION, MAXDWORD, entry, entry->AceSize)) {
-      return std::move(AclObject());
-    }
-  }
-
-  if (deny_mask != 0 &&
-      !AddAccessDeniedAce(new_acl, ACL_REVISION, deny_mask, target)) {
-    return std::move(AclObject());
-  }
-
-  if (allow_mask != 0 &&
-      !AddAccessAllowedAce(new_acl, ACL_REVISION, allow_mask, target)) {
-    return std::move(AclObject());
-  }
-
-  for (; i < info.AceCount; i++) {
-    if (!GetAce(acl, i, &void_ent)) {
-      return std::move(AclObject());
-    }
-
-    auto entry = static_cast<PACE_HEADER>(void_ent);
-    if (!AddAce(new_acl, ACL_REVISION, MAXDWORD, void_ent, entry->AceSize)) {
-      return std::move(AclObject());
-    }
-  }
-
-  return std::move(new_acl_buffer);
 }
 
 PlatformFile::PlatformFile(const fs::path& path, int mode, int perms)
@@ -1082,8 +929,82 @@ size_t PlatformFile::size() const {
   return ::GetFileSize(handle_, nullptr);
 }
 
-bool platformChmod(const std::string& path, mode_t perms) {
-  PACL dacl = nullptr;
+void getAceForSid(PEXPLICIT_ACCESS ace,
+                  PSID sid,
+                  bool allow_read,
+                  bool allow_write,
+                  bool allow_exec,
+                  bool target_is_owner = false) {
+  // Allow all users to view the objects DACL
+  unsigned long mask = READ_CONTROL;
+
+  if (target_is_owner) {
+    // Give the owner the ability to modify the DACL and delete the file
+    mask |= DELETE | WRITE_DAC;
+  }
+
+  /*
+   * We have defined CHMOD_READ, CHMOD_WRITE, and CHMOD_EXECUTE as
+   * combinations of Windows access masks in order to simulate the
+   * intended effects of the r, w, x permissions of POSIX. In order to
+   * correctly simulate the permissions, any permissions set will be
+   * explicitly allowed, and denied permissions are emulated as unset
+   * ACEs, which are denyed by default on Windows with a filled out DACL,
+   * as we are constructing.
+   *
+   * We add additional rights for allow cases because we do not want to
+   * pollute the CHMOD_* with overlapping rights. For instance, adding
+   * SYNCHRONIZE to both CHMOD_READ and CHMOD_EXECUTE will be problematic
+   * if execute is denied. SYNCHRONIZE will be added to a deny access
+   * control entry which will prevent even a GENERIC_READ from occurring.
+   */
+  if (allow_read) {
+    mask |= GENERIC_READ | CHMOD_READ | FILE_READ_ATTRIBUTES | SYNCHRONIZE;
+  }
+
+  if (allow_write) {
+    mask |= GENERIC_WRITE | CHMOD_WRITE | DELETE | SYNCHRONIZE;
+  }
+
+  if (allow_exec) {
+    mask |=
+        GENERIC_EXECUTE | CHMOD_EXECUTE | FILE_READ_ATTRIBUTES | SYNCHRONIZE;
+  }
+
+
+  /*
+    unsigned long perm_mask = getAceBitmask((perms & S_IRUSR) == S_IRUSR,
+                                          (perms & S_IWUSR) == S_IWUSR,
+                                          (perms & S_IXUSR) == S_IXUSR,
+                                          true);
+                                          */
+ 
+  ace->grfAccessMode = SET_ACCESS;
+  ace->grfAccessPermissions = mask; 
+  PTRUSTEE_A trust = static_cast<PTRUSTEE_A>(malloc(sizeof(TRUSTEE_A)));
+  BuildTrusteeWithSidA(trust, sid);
+  ace->Trustee = *trust;
+  free(trust);
+};
+
+// DACL with the ACE NOTE: Good example of this work:
+// https://docs.microsoft.com/en-us/windows/desktop/secauthz/creating-a-security-descriptor-for-a-new-object-in-c--
+// TODO: Code cleanup? Double check for platformChmod references throughout the
+// code base to see if this will work.
+// TODO: Documentation? This might need a good reference for how/why we are
+// treating DACLs the way we are.
+// TODO: Unit tests, let's make something to ensure that specific SIDS can and
+// cannot access things correctly?
+/**
+ * @brief: a Windows specific implementation of 'chmod'
+ *
+ * @params:
+ * path - the Path of the object to modify the permissions of
+ * perms - a bitmask of the permissions to set
+ * set_inherit - whether or not the permissions being applied should be inherited
+ */
+bool platformChmod(const std::string& path, mode_t perms, bool set_inherit) {
+  PACL old_dacl = nullptr;
   PSID owner = nullptr;
   PSECURITY_DESCRIPTOR sd = nullptr;
 
@@ -1094,44 +1015,101 @@ bool platformChmod(const std::string& path, mode_t perms) {
                                        DACL_SECURITY_INFORMATION,
                                    &owner,
                                    nullptr,
-                                   &dacl,
+                                   &old_dacl,
                                    nullptr,
                                    &sd);
-
   if (ret != ERROR_SUCCESS) {
     return false;
   }
 
-  SecurityDescriptor sd_wrapper(sd);
-
-  if (owner == nullptr || dacl == nullptr) {
+  if (owner == nullptr || old_dacl == nullptr) {
     return false;
   }
 
+  // Create an ACE for the 'user' of the object
+  PACL new_dacl = nullptr;
+  EXPLICIT_ACCESS ea;
+  getAceForSid(&ea,
+               owner,
+               (perms & S_IRUSR) == S_IRUSR,
+               (perms & S_IWUSR) == S_IWUSR,
+               (perms & S_IXUSR) == S_IXUSR,
+               true);
+  ea.grfInheritance = set_inherit ? SUB_CONTAINERS_AND_OBJECTS_INHERIT : NO_INHERITANCE;
+
+  // Populate the DACL with our owner ACE
+  ret = SetEntriesInAcl(1, &ea, nullptr, &new_dacl);
+  if (ret != ERROR_SUCCESS) {
+    VLOG(1) << "Failed to set 'user' ACE in DACL";
+    
+    return false;
+  }
+
+  // TODO: Remove this, testing that we likely need SYSTEM and Administrator to be "user" :(
+  // Get the 'other' sid to check for in group ACE creations
   unsigned long sid_size = SECURITY_MAX_SID_SIZE;
+  std::vector<char> admins_buf(sid_size);
+  PSID admins = static_cast<PSID>(admins_buf.data());
+  if (!CreateWellKnownSid(WinBuiltinAdministratorsSid, nullptr, admins, &sid_size)) {
+    return false;
+  }
+
+  getAceForSid(&ea,
+               admins,
+               (perms & S_IRUSR) == S_IRUSR,
+               (perms & S_IWUSR) == S_IWUSR,
+               (perms & S_IXUSR) == S_IXUSR,
+               true);
+  ea.grfInheritance =
+      set_inherit ? SUB_CONTAINERS_AND_OBJECTS_INHERIT : NO_INHERITANCE;
+
+  // Populate the DACL with our owner ACE
+  ret = SetEntriesInAcl(1, &ea, new_dacl, &new_dacl);
+  if (ret != ERROR_SUCCESS) {
+    VLOG(1) << "Failed to set 'user' ACE in DACL";
+
+    return false;
+  }
+
+  std::vector<char> system_buf(sid_size);
+  PSID system = static_cast <PSID>(system_buf.data());
+  if (!CreateWellKnownSid(WinLocalSystemSid, nullptr, system, &sid_size)) {
+    return false;
+  }
+
+    getAceForSid(&ea,
+               system,
+               (perms & S_IRUSR) == S_IRUSR,
+               (perms & S_IWUSR) == S_IWUSR,
+               (perms & S_IXUSR) == S_IXUSR,
+               true);
+  ea.grfInheritance =
+      set_inherit ? SUB_CONTAINERS_AND_OBJECTS_INHERIT : NO_INHERITANCE;
+
+  // Populate the DACL with our owner ACE
+  ret = SetEntriesInAcl(1, &ea, new_dacl, &new_dacl);
+  if (ret != ERROR_SUCCESS) {
+    VLOG(1) << "Failed to set 'user' ACE in DACL";
+
+    return false;
+  }
+
+
+
+
+
+  // Get the 'other' sid to check for in group ACE creations
   std::vector<char> world_buf(sid_size);
-  PSID world = (PSID)world_buf.data();
-  if (!::CreateWellKnownSid(WinWorldSid, nullptr, world, &sid_size)) {
+  PSID world = static_cast<PSID>(world_buf.data());
+  if (!CreateWellKnownSid(WinWorldSid, nullptr, world, &sid_size)) {
     return false;
   }
 
-  // Modify the 'user' permissions
-  PACL acl = nullptr;
-  AclObject acl_buffer = modifyAcl(dacl,
-                                   owner,
-                                   (perms & S_IRUSR) == S_IRUSR,
-                                   (perms & S_IWUSR) == S_IWUSR,
-                                   (perms & S_IXUSR) == S_IXUSR,
-                                   true);
-  acl = reinterpret_cast<PACL>(acl_buffer.get());
-  if (acl == nullptr) {
-    return false;
-  }
-
-  // Modify the 'group' permissions
+  // Modify the 'group' permissions.
   PVOID void_ent = nullptr;
-  for (unsigned long i = 0; i < dacl->AceCount; i++) {
-    if (!GetAce(dacl, i, &void_ent)) {
+  for (unsigned long i = 0; i < old_dacl->AceCount; i++) {
+    if (!GetAce(old_dacl, i, &void_ent)) {
+      VLOG(1) << "Failed to lookup Group ACE " << i << " in existing DACL";
       return false;
     }
 
@@ -1141,12 +1119,8 @@ bool platformChmod(const std::string& path, mode_t perms) {
       auto allowed_ace = reinterpret_cast<PACCESS_ALLOWED_ACE>(ace);
       gsid = &allowed_ace->SidStart;
     }
-    if (ace->AceType == ACCESS_DENIED_ACE_TYPE) {
-      auto denied_ace = reinterpret_cast<PACCESS_DENIED_ACE>(ace);
-      gsid = &denied_ace->SidStart;
-    }
 
-    // We only modify allow or deny ACEs
+    // We only modify allow ACEs
     if (gsid == nullptr) {
       continue;
     }
@@ -1156,39 +1130,60 @@ bool platformChmod(const std::string& path, mode_t perms) {
       continue;
     }
 
-    acl_buffer = modifyAcl(acl,
-                           gsid,
-                           (perms & S_IRGRP) == S_IRGRP,
-                           (perms & S_IWGRP) == S_IWGRP,
-                           (perms & S_IXGRP) == S_IXGRP);
-    acl = reinterpret_cast<PACL>(acl_buffer.get());
-    if (acl == nullptr) {
+    getAceForSid(&ea,
+                 gsid,
+                 (perms & S_IRGRP) == S_IRGRP,
+                 (perms & S_IWGRP) == S_IWGRP,
+                 (perms & S_IXGRP) == S_IXGRP,
+                 false);
+    ea.grfInheritance =
+        set_inherit ? SUB_CONTAINERS_AND_OBJECTS_INHERIT : NO_INHERITANCE;
+
+    auto ret = SetEntriesInAcl(1, &ea, new_dacl, &new_dacl);
+    if (ret != ERROR_SUCCESS) {
+      VLOG(1) << "Failed to set 'group' ACE " << i << " in DACL";
+      LocalFree(new_dacl);
       return false;
     }
   }
 
   // Modify the 'other' permissions
-  acl_buffer = modifyAcl(acl,
-                         world,
-                         (perms & S_IROTH) == S_IROTH,
-                         (perms & S_IWOTH) == S_IWOTH,
-                         (perms & S_IXOTH) == S_IXOTH);
-  acl = reinterpret_cast<PACL>(acl_buffer.get());
-  if (acl == nullptr) {
+  getAceForSid(&ea,
+               world,
+               (perms & S_IROTH) == S_IROTH,
+               (perms & S_IWOTH) == S_IWOTH,
+               (perms & S_IXOTH) == S_IXOTH,
+               false);
+  ea.grfInheritance =
+      set_inherit ? SUB_CONTAINERS_AND_OBJECTS_INHERIT : NO_INHERITANCE;
+
+  ret = SetEntriesInAcl(1, &ea, new_dacl, &new_dacl);
+  if (ret != ERROR_SUCCESS) {
+    VLOG(1) << "Failed to set 'other' ACE in DACL";
+    LocalFree(new_dacl);
     return false;
   }
 
   // Lastly, apply the permissions to the object
-  // SetNamedSecurityInfoA takes a mutable string for the path parameter
   std::vector<char> mutable_path(path.begin(), path.end());
-  mutable_path.push_back('\0');
-  if (SetNamedSecurityInfoA(mutable_path.data(),
-                            SE_FILE_OBJECT,
-                            DACL_SECURITY_INFORMATION,
-                            nullptr,
-                            nullptr,
-                            acl,
-                            nullptr) != ERROR_SUCCESS) {
+  ret = SetNamedSecurityInfoA(mutable_path.data(),
+                              SE_FILE_OBJECT,
+                              DACL_SECURITY_INFORMATION,
+                              nullptr,
+                              nullptr,
+                              nullptr,
+                              nullptr);
+
+  ret = SetNamedSecurityInfoA(mutable_path.data(),
+                              SE_FILE_OBJECT,
+                              DACL_SECURITY_INFORMATION,
+                              nullptr,
+                              nullptr,
+                              new_dacl,
+                              nullptr);
+  LocalFree(new_dacl);
+  if (ret != ERROR_SUCCESS) {
+    VLOG(1) << "Failed to apply new DACL to object";
     return false;
   }
   return true;
@@ -1750,4 +1745,4 @@ fs::path getSystemRoot() {
 Status platformLstat(const std::string& path, struct stat& d_stat) {
   return Status(1);
 }
-}
+} // namespace osquery
