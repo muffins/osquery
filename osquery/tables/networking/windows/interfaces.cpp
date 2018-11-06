@@ -62,6 +62,8 @@ void genInterfaceDetail(const IP_ADAPTER_ADDRESSES* adapter, Row& r) {
       "Name = \"" +
       r["description"] + "\"";
 
+  LOG(INFO) << "Querying Network stats with " << query;
+
   const WmiRequest req1(query);
   if (req1.getStatus().ok()) {
     const auto& results = req1.results();
@@ -96,7 +98,7 @@ void genInterfaceDetail(const IP_ADAPTER_ADDRESSES* adapter, Row& r) {
       r["odrops"] =
           BIGINT(tryTo<unsigned long long>(sPlaceHolder).takeOr(0ull));
     } else {
-      LOG(INFO) << "Failed to retrieve network statistics for interface "
+      VLOG(1) << "Failed to retrieve network statistics for interface "
                 << r["interface"];
     }
   }
