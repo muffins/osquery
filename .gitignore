@@ -25,6 +25,8 @@
 # Build Artifacts
 .provision
 build/
+buck-out/
+.buckd/
 *.bottle.tar.gz
 
 # Run Artifacts
