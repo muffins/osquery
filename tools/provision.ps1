@@ -406,6 +406,124 @@ function Install-ThirdParty {
   }
 }
 
+function Update-GitSubmodule {
+  [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = "Low")]
+  param()
+  if (-not $PSCmdlet.ShouldProcess('Git Submodules')) {
+    Exit -1
+  }
+  if ($null -eq (Get-Command 'git.exe' -ErrorAction SilentlyContinue)) {
+    Write-Host "[-] ERROR: Git was not found on the system. Install git." -foregroundcolor Red
+    Exit -1
+  }
+  $repoRoot = Resolve-Path ([System.IO.Path]::Combine($PSScriptRoot, '..'))
+  $thirdPartyPath = Resolve-Path ([System.IO.Path]::Combine($PSScriptRoot, '..', 'third-party'))
+  Write-Host " => Updating git submodules in $thirdPartyPath ..." -foregroundcolor Yellow
+  Push-Location $repoRoot
+  git submodule --quiet update --init
+  Pop-Location
+  Write-Host "[+] Submodules updated!" -foregroundcolor Yellow
+}
+
+function New-PythonBuckConfig {
+  param(
+    [string] $python_cfg_out = 'tools/buckconfigs/windows-x86_64/python/default.bcfg'
+  )
+
+  $python_template = 
+  @'
+  [python#py3]
+  interpreter = PYTHON3_LOCATION/python.exe  
+'@
+
+  $python3_location = 'C:/Users/thor/AppData/Local/Programs/Python/Python37'
+
+  $python_template = $python_template -Replace 'PYTHON3_LOCATION', $python3_location
+
+  $python_template | Out-File -Encoding 'UTF8' $python_cfg_out
+}
+
+function New-VsToolchainBuckConfig {
+  param(
+    [string] $vs_cfg_out = 'tools/buckconfigs/windows-x86_64/toolchain/vs2017_15.5.bcfg'
+  )
+
+  $vs_toolchain_ver = '14.15.26726'
+  $winsdk_ver = '10.0.17134.0'
+
+  # TODO: Is the km path needed? I didn't have that but things still built..
+  $toolchain_template =
+  @'
+  [cxx]
+  cpp = "VS_INSTALL_LOCATION/VC/Tools/MSVC/VS_TOOLS_VERSION/bin/Hostx64/x64/cl.exe"
+  cpp_type = windows
+
+  cc = "VS_INSTALL_LOCATION/VC/Tools/MSVC/VS_TOOLS_VERSION/bin/Hostx64/x64/cl.exe"
+  cc_type = windows
+
+  cxxpp = "VS_INSTALL_LOCATION/VC/Tools/MSVC/VS_TOOLS_VERSION/bin/Hostx64/x64/cl.exe"
+  cxxpp_type = windows
+
+  cxx = "VS_INSTALL_LOCATION/VC/Tools/MSVC/VS_TOOLS_VERSION/bin/Hostx64/x64/cl.exe"
+  cxx_type = windows
+
+  asmpp = "VS_INSTALL_LOCATION/VC/Tools/MSVC/VS_TOOLS_VERSION/bin/Hostx64/x64/ml64.exe"
+  asmpp_type = windows
+
+  asm = "VS_INSTALL_LOCATION/VC/Tools/MSVC/VS_TOOLS_VERSION/bin/Hostx64/x64/ml64.exe"
+  asm_type = windows_ml64
+
+  ld = "VS_INSTALL_LOCATION/VC/Tools/MSVC/VS_TOOLS_VERSION/bin/Hostx64/x64/link.exe"
+  linker_platform = windows
+
+  ar = "VS_INSTALL_LOCATION/VC/Tools/MSVC/VS_TOOLS_VERSION/bin/Hostx64/x64/lib.exe"
+  archiver_platform = windows
+
+[cxx_toolchain]
+  cppflags = \
+    /I"VS_INSTALL_LOCATION/VC/Tools/MSVC/VS_TOOLS_VERSION/include" \
+    /I"VS_INSTALL_LOCATION/VC/Tools/MSVC/VS_TOOLS_VERSION/atlmfc/include" \
+    /I"VS_INSTALL_LOCATION/VC/Auxiliary/VS/include" \
+    /I"WIN_SDK_INSTALL_LOCATION/Include/WIN_SDK_VERSION/shared" \
+    /I"WIN_SDK_INSTALL_LOCATION/Include/WIN_SDK_VERSION/ucrt" \
+    /I"WIN_SDK_INSTALL_LOCATION/Include/WIN_SDK_VERSION/um" \
+    /I"WIN_SDK_INSTALL_LOCATION/Include/WIN_SDK_VERSION/winrt"
+
+  cflags =
+
+  cxxppflags = \
+    /I"VS_INSTALL_LOCATION/VC/Tools/MSVC/VS_TOOLS_VERSION/include" \
+    /I"VS_INSTALL_LOCATION/VC/Tools/MSVC/VS_TOOLS_VERSION/atlmfc/include" \
+    /I"VS_INSTALL_LOCATION/VC/Auxiliary/VS/include" \
+    /I"WIN_SDK_INSTALL_LOCATION/Include/WIN_SDK_VERSION/shared" \
+    /I"WIN_SDK_INSTALL_LOCATION/Include/WIN_SDK_VERSION/ucrt" \
+    /I"WIN_SDK_INSTALL_LOCATION/Include/WIN_SDK_VERSION/um" \
+    /I"WIN_SDK_INSTALL_LOCATION/Include/WIN_SDK_VERSION/winrt"
+
+  cxxflags =
+
+  ldflags = \
+    /LIBPATH:"VS_INSTALL_LOCATION/VC/Tools/MSVC/VS_TOOLS_VERSION/lib/x64" \
+    /LIBPATH:"WIN_SDK_INSTALL_LOCATION/Lib/WIN_SDK_VERSION/ucrt/x64" \
+    /LIBPATH:"WIN_SDK_INSTALL_LOCATION/Lib/WIN_SDK_VERSION/um/x64"
+
+'@
+
+  # TODO: Derive the Windows SDK path
+  $winsdk = 'C:/Program Files (x86)/Windows Kits/10/'
+
+  $vsinfo = Get-VSInfo
+  $vs_install_loc = $vsinfo.location -Replace '\\', '/'
+
+  $toolchain_template = $toolchain_template -Replace 'VS_INSTALL_LOCATION', $vs_install_loc
+  $toolchain_template = $toolchain_template -Replace 'VS_TOOLS_VERSION', $vs_toolchain_ver
+
+  $toolchain_template = $toolchain_template -Replace 'WIN_SDK_INSTALL_LOCATION', $winsdk
+  $toolchain_template = $toolchain_template -Replace 'WIN_SDK_VERSION', $winsdk_ver
+
+  $toolchain_template | Out-File -Encoding 'UTF8' $vs_cfg_out
+}
+
 function Main {
   if ($PSVersionTable.PSVersion.Major -lt 3.0 ) {
     Write-Output "This installer currently requires Powershell 3.0 or greater."
@@ -422,6 +540,33 @@ function Main {
   $loc = Get-Location
   Write-Host "[+] Success -- provisioning osquery from $loc" -foregroundcolor Green
   $out = Install-Chocolatey
+  $out = Install-ChocoPackage 'buck'
+
+  $buck_root = 'tools/buckconfigs/windows-x86_64/'
+  if (-not (Test-Path $buck_root)) {
+    $msg = '[-] Failed to find buck config, script must be run from osquery repo root'
+    Write-Host $msg -ForegroundColor Red
+    exit
+  }
+
+  $vs_bcfg = "$buck_root/toolchain/vs2017_15.5.bcfg"
+  if (-not (Test-Path $vs_bcfg)) {
+    $msg = '[+] Generating VS Buck Configuration file'
+    Write-Host $msg -ForegroundColor Cyan
+    $out = New-VsToolchainBuckConfig $vs_bcfg
+  }
+  
+  $python_bcfg = "$buck_root/python/default.bcfg"
+  if (-not (Test-Path $python_bcfg)) {
+    $msg = '[+] Generating Python Buck Configuration file'
+    Write-Host $msg -ForegroundColor Cyan
+    $out = New-PythonBuckConfig $python_bcfg
+  }
+
+  #
+  # TODO: I'm not sure we need anything else other than buck and vs?
+  #
+
   $out = Install-ChocoPackage 'winflexbison'
   # Get flex and bison into our path for use
   $chocoPath = [System.Environment]::GetEnvironmentVariable('ChocolateyInstall', 'Machine')

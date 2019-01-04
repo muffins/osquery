@@ -25,9 +25,8 @@
 # Build Artifacts
 .provision
 build/
-buck-out/
-.buckd/
 *.bottle.tar.gz
+
 
 # Run Artifacts
 *.log
@@ -76,3 +75,7 @@ cscope.out
 # Buck
 .buckd/
 buck-out/
+
+# Windows buck files, these are generated
+tools/buckconfigs/windows-x86_64/python/default.bcfg
+tools/buckconfigs/windows-x86_64/toolchain/vs2017_15.5.bcfg

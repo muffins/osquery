@@ -106,7 +106,7 @@ function Invoke-OsqueryMsbuild {
 
 # A function for running cmake to generate the osquery solution,
 # building the osquery project, and lastly running our tests
-function Invoke-OsqueryBuild {
+function Invoke-OsqueryLegacyBuild {
 
   # Create our build directory if it doesn't exist
   $currentDir = Get-Location
@@ -146,6 +146,26 @@ function Invoke-OsqueryBuild {
   Write-Host "`n[+] Build finished in $($sw.ElapsedMilliseconds) ms"
   return $ret.exitcode
 }
+
+function Invoke-OsqueryBuild {
+  # TODO:
+  #
+  #  1.) Derive the VS toolchain path
+  #
+  #  2.) Derive the SDK include paths
+  #
+  #  3.) Derive the python3 path
+  #
+  #  4.) Generate the bcfg files, if they don't already exist
+  #
+  #  4 A/B/C.) Check for components of healthy buck install - Dev Mode, Long Paths, Symlinks
+  #
+  #  5.) Build
+
+}
+
+
+
 
 # If the script is being invoked directly, we call our build function
 $ret = Invoke-OsqueryBuild
