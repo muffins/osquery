@@ -132,46 +132,6 @@ function Test-ChocoPackageInstalled {
   return $false
 }
 
-# Helper function to check the version of python installed, as well as
-# return the parent path where Python is installed.
-function Test-PythonInstalled {
-  $major = '*2.7*'
-  $pythonInstall = (Get-Command 'python' -ErrorAction SilentlyContinue).Source
-  if ($pythonInstall -eq $null) {
-    $msg = '[-] Python binary not found in system path'
-    Write-Host $msg -ForegroundColor Yellow
-    return $false
-  }
-  $out = Start-OsqueryProcess $pythonInstall @('--version')
-  if (($out.exitcode -ne 0) -or (-not ($out.stderr -like $major))) {
-    $msg = '[-] Python major version != 2.7'
-    Write-Host $msg -ForegroundColor Yellow
-    return $false
-  }
-  # Get the specific version returned
-  $version = $out.stderr.Split(" ")
-  if ($version.Length -lt 2) {
-    $msg = '[-] Encountered unknown version of python'
-    Write-Host $msg -ForegroundColor Yellow
-    return $false
-  }
-  $minor = $version[1].Trim().Split(".")
-  if ($minor.Length -le 2) {
-    $msg = '[-] Encountered unknown version of python'
-    Write-Host $msg -ForegroundColor Yellow
-    return $false
-  }
-  # The oldest Python variant we support is 2.7.12
-  if ([int]$minor[2] -lt 12) {
-    $msg = '[-] Python minor version < 12'
-    Write-Host $msg -ForegroundColor Yellow
-    return $false
-  }
-  # Lastly derive the parent path of the binary, as we use this to
-  # get the pip path also.
-  return (Get-Item $pythonInstall).Directory.Fullname
-}
-
 # Installs the Powershell Analzyer: https://github.com/PowerShell/PSScriptAnalyzer
 function Install-PowershellLinter {
   [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = "Medium")]
@@ -425,6 +385,7 @@ function Update-GitSubmodule {
   Write-Host "[+] Submodules updated!" -foregroundcolor Yellow
 }
 
+# TODO: This needs work
 function New-PythonBuckConfig {
   param(
     [string] $python_cfg_out = 'tools/buckconfigs/windows-x86_64/python/default.bcfg'
@@ -586,12 +547,12 @@ function Main {
   $out = Install-ChocoPackage 'windows-sdk-10.0'
 
   # Only install python if it's not needed
-  $pythonInstall = Test-PythonInstalled
+  $py_install = Get-PythonInfo
   if (-not ($pythonInstall)) {
     Install-ChocoPackage 'python2'
     # Update the system path and re-derive the python install
     $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine")
-    $pythonInstall = Test-PythonInstalled
+    $py_install = Get-PythonInfo
   }
 
   $out = Install-ChocoPackage 'wixtoolset' '' @('--version', '3.10.3.300701')
@@ -599,7 +560,7 @@ function Main {
   Add-ToSystemPath 'C:\Program Files (x86)\WiX Toolset v3.10\bin'
 
   # Convenience variable for accessing Python
-  [Environment]::SetEnvironmentVariable("OSQUERY_PYTHON_PATH", $pythonInstall, "Machine")
+  [Environment]::SetEnvironmentVariable("OSQUERY_PYTHON_PATH", $py_install.location, "Machine")
   $out = Install-PipPackage
   if (Test-Path env:OSQUERY_BUILD_HOST) {
     $out = Install-ChocoPackage 'visualcppbuildtools'

@@ -77,5 +77,5 @@ cscope.out
 buck-out/
 
 # Windows buck files, these are generated
-tools/buckconfigs/windows-x86_64/python/default.bcfg
-tools/buckconfigs/windows-x86_64/toolchain/vs2017_15.5.bcfg
+windows-x86_64/python/default.bcfg
+windows-x86_64/toolchain/vs2017_15.5.bcfg

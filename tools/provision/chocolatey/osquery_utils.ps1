@@ -254,6 +254,53 @@ function Get-VSInfo {
   return $vsinfo
 }
 
+# Fetches the location of the python as seen from system path
+function Get-PythonInfo {
+  
+  # We allow for the env variable to supersede the path install, this allows
+  # for us to interchange python3/python2, as the newer buck build requires
+  # python3.
+  $py_install = [Environment]::GetEnvironmentVariable("OSQUERY_PYTHON_BUILD_PATH", "Machine")
+  if ($py_install -eq $null) {
+    $py_install = (Get-Command 'python' -ErrorAction SilentlyContinue).Source
+  }
+
+  if (($py_install -eq $null) -or ($py_install -eq '')) {
+    $msg = '[-] Failed to derive python binary location'
+    Write-Host $msg -ForegroundColor Yellow
+    return $false
+  }
+
+  $out = Start-OsqueryProcess $py_install @('--version')
+  if ($out.exitcode -ne 0) {
+    $msg = '[-] Failed to invoke Python for version derivation'
+    Write-Host $msg -ForegroundColor Red
+    return $false
+  }
+
+  $pyinfo = New-Object -TypeName psobject
+  $pyinfo | Add-Member -MemberType NoteProperty -Name version -Value ''
+  $pyinfo | Add-Member -MemberType NoteProperty -Name location -Value ''
+
+  # With python2 the version was reported with stderr :|
+  $version = $out.stderr.Split(" ")
+
+  if ($version.Length -lt 2) {
+    if ($out.stdout.Split(" ").Length -lt 2) {
+      $msg = '[-] Encountered unknown version of python'
+      Write-Host $msg -ForegroundColor Yellow
+      return $false
+    } else {
+      $version = $out.stdout.Split(" ")
+    }
+  }
+
+  $pyinfo.version = $version[1].Trim()
+  $pyinfo.location = $py_install
+
+  return $pyinfo
+}
+
 # A helper function to derive the latest VS install and call vcvarsall.bat
 function Invoke-VcVarsAll {
   $vsinfo = Get-VSInfo
