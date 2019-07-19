@@ -28,7 +28,8 @@ if ((Get-Service $serviceName -ErrorAction SilentlyContinue)) {
   }
 
   Set-Service $serviceName -startuptype 'manual'
-  Get-CimInstance -ClassName Win32_Service -Filter "Name='osqueryd'" | Invoke-CimMethod -methodName Delete
+  Get-CimInstance -ClassName Win32_Service -Filter "Name='$serviceName'" | 
+    Invoke-CimMethod -methodName Delete
 }
 
 if (Test-Path $targetFolder) {

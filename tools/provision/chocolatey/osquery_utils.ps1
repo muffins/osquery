@@ -70,16 +70,25 @@ function Set-SafePermissions {
     [string] $target = ''
   )
   if ($PSCmdlet.ShouldProcess($target)) {
-    $acl = Get-Acl $target
 
-    # First, to ensure success, we remove the entirety of the ACL
+    # First, disable inheritance on the folder
+    $acl = Get-Acl "$target"
     $acl.SetAccessRuleProtection($true, $false)
-    foreach ($access in $acl.Access) {
-      $acl.RemoveAccessRule($access)
-    }
-    Set-Acl $target $acl
+    Set-Acl "$target" $acl
 
-    $acl = Get-Acl $target
+    # Then ensure success, we remove the entirety of the ACL
+    $acl = Get-Acl "$target"
+    foreach ($access in $acl.Access) {
+      try{
+        $acl.RemoveAccessRule($access) | Out-Null
+      } catch { 
+        # We do nothing, as some ACE entries cannot correctly be derived
+      }
+    }
+    Set-Acl "$target" $acl
+
+    # Finally, apply our safe permissions
+    $acl = Get-Acl "$target"
     $inheritanceFlag = [System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [System.Security.AccessControl.InheritanceFlags]::ObjectInherit
     $propagationFlag = [System.Security.AccessControl.PropagationFlags]::None
     $permType = [System.Security.AccessControl.AccessControlType]::Allow
@@ -109,10 +118,10 @@ function Set-SafePermissions {
       $acl.SetAccessRule($accessRule)
     }
     $acl.SetOwner($adminsGroup)
-    Set-Acl $target $acl
+    Set-Acl "$target" $acl
 
     # Finally set the Administrators group as the owner for all items
-    $items = Get-ChildItem -Recurse -Path $target
+    $items = Get-ChildItem -Recurse -Path "$target"
     foreach ($item in $items) {
       $acl = Get-Acl -Path $item.FullName
       $acl.SetOwner($adminsGroup)

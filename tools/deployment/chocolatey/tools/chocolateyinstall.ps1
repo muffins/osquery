@@ -13,23 +13,32 @@
 $packageParameters = $env:chocolateyPackageParameters
 $arguments = @{}
 
+
 # Ensure the service is stopped and processes are not running if exists.
-if ((Get-Service $serviceName -ErrorAction SilentlyContinue) -and `
-  (Get-Service $serviceName).Status -eq 'Running') {
-  Stop-Service $serviceName
+$svc = Get-WmiObject -ClassName Win32_Service -Filter "Name='$serviceName'"
+if ($svc -and $svc.State -eq 'Running') {
+  Stop-Service -Force $serviceName -ErrorAction SilentlyContinue
+
   # If we find zombie processes, ensure they're termintated
   $proc = Get-Process | Where-Object { $_.ProcessName -eq 'osqueryd' }
   if ($null -ne $proc) {
     Stop-Process -Force $proc -ErrorAction SilentlyContinue
+  }
+
+  # Issue #5568: As of osquery 3.4.0 and greater, the service _must_ be 
+  # installed in Program Files to mitigate a privilege escalation vulnerability.
+  # To remediate this, we delete the system service and allow the installer to
+  # recreate it with the correct path
+  if ([regex]::escape($svc.PathName) -like [regex]::escape("${legacyInstall}*")) {
+    Get-CimInstance -ClassName Win32_Service -Filter "Name='$serviceName'" | 
+      Invoke-CimMethod -methodName Delete
+    $installService = $true
   }
 }
 
 # Lastly, ensure that the Deny Write ACLs have been removed before modifying
 if (Test-Path $daemonFolder) {
   Set-DenyWriteAcl $daemonFolder 'Remove'
-}
-if (Test-Path $extensionsFolder) {
-  Set-DenyWriteAcl $extensionsFolder 'Remove'
 }
 
 # Now parse the packageParameters using good old regular expression
