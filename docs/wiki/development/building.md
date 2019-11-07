@@ -347,7 +347,8 @@ vagrant ssh aws-amazon2015.03
 
 Package creation is facilitated by CPack.
 
-The package will include several components:
+The package will include several components:n
+
 - The executables: `osqueryd`, `osqueryi`, and small management script `osqueryctl`
 - An osquery systemd unit on Linux (with initd script wrapper)
 - An osquery LaunchDaemon on macOS
@@ -356,6 +357,7 @@ The package will include several components:
 - The example query packs from the repository
 - Folder structures required for logging
 
+### On Linux:
 To create a DEB, RPM, or TGZ on Linux, CPack will attempt to auto-detect the appropriate package type.
 You may override this with the CMake `PACKAGING_SYSTEM` variable as seen in the example below.
 
@@ -364,7 +366,37 @@ cmake -DPACKAGING_SYSTEM=RPM ..
 make package
 ```
 
-On macOS the `package` target will create a `.pkg`, and on Windows it will create a `.msi`.
+### On Windows:
+On Windows CPack will default to generating an MSI installer. You must ensure that `cpack.exe` refers to the binary provided by CMake, as `cpack` is also an alias for Chocolatey. You can verify you're using the correct binary by checking the output of `Get-Command cpack`. To build the MSI on Windows, ensure you've built the binaries using `cmake` as detailed above, then use `cpack` as follows:
+```cmd
+PS C:\Users\Nicholas\work\repos\osquery\build\windows10> Get-Command cpack
+CommandType     Name                                               Version    Source
+-----------     ----                                               -------    ------
+Application     cpack.exe                                          3.15.3.0   C:\Program Files\CMake\bin\cpack.exe
+
+
+PS C:\Users\Nicholas\work\repos\osquery\build\windows10> cpack
+CPack: Create package using WIX
+CPack: Install projects
+CPack: - Install project: osquery
+CPack: Create package
+CPack: - package: C:/Users/Nicholas/work/repos/osquery/build/windows10/osquery-4.1.0.msi generated.
+```
+
+### On Macos:
+Similarly on macOS after you've build the binaries using CMake, you can run `cpack` from the build directory to generate a `.pkg`.
+
+```
+/Users/thor/osquery/build ❯ cpack
+CPack: Create package using productbuild
+CPack: Install projects
+CPack: - Run preinstall target for: osquery
+CPack: - Install project: osquery
+CPack: -   Install component: osquery
+CPack: Create package
+CPack: -   Building component package: /Users/thor/work/repos/osquery/build/_CPack_Packages/Darwin/productbuild/osquery-4.1.0-1-g6d9fdde80/Contents/Packages/osquery-4.1.0-1-g6d9fdde80-osquery.pkg
+CPack: - package: /Users/thor/work/repos/osquery/build/osquery-4.1.0-1-g6d9fdde80.pkg generated.
+```
 
 # Build Performance
 
