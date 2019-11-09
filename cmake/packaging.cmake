@@ -14,6 +14,7 @@ set(windows_supported_packaging_system
   # NSIS
   # NSIS64
   WIX
+  CHOCO
 )
 
 set(macos_supported_packaging_system
@@ -116,6 +117,28 @@ function(findPackagingTool)
         "Could not find the WIX packaging tools, either install it or if it's already installed, please set the WIX_ROOT_FOLDER_PATH variable to the root folder of the WIX installation."
       )
     endif()
+  elseif(PACKAGING_SYSTEM STREQUAL "CHOCO")
+    
+    find_program(choco_exec NAMES choco.exe PATHS "${CHOCO_ROOT_FOLDER_PATH}\\bin" "$ENV{CHOCO}\\bin")
+
+    if(NOT "${choco_exec}" STREQUAL "choco_exec-NOTFOUND")
+      get_filename_component(choco_root_path "${choco_exec}" DIRECTORY)
+      get_filename_component(choco_root_path "${choco_root_path}" DIRECTORY)
+      message(STATUS "Found Chocolatey toolset at: ${choco_root_path}")
+      set(CPACK_CHOCO_ROOT "${choco_root_path}")
+      overwrite_cache_variable("CHOCO_ROOT_FOLDER_PATH" "STRING" "${choco_root_path}")
+    else()
+      message(WARNING
+        "Could not find the Chocolatey packaging tools, either install chocolatey, or if it's already installed, please set the CHOCO_ROOT_FOLDER_PATH variable to the root folder of the Chocolatey installation, typically C:\\ProgramData\\Chocolatey."
+      )
+    endif()
+    # We make use of 7z for chocolatey installs, but this is bundled alongside
+    # choco so it's likely we are able to find it
+    find_program(7z_exec NAMES 7z.exe PATHS "${CHOCO_ROOT_FOLDER_PATH}\\bin" "$ENV{CHOCO}\\bin")
+
+    if ("${7z_exec}" STREQUAL "7z_exec-NOTFOUND")
+      message(WARNING "Failed to find 7z.exe for choco package creation. Check your Chocolatey installation")
+    endif()
   endif()
 endfunction()
 
@@ -181,20 +204,27 @@ function(generateInstallTargets)
     # .
     install(PROGRAMS "$<TARGET_FILE:osqueryd>" DESTINATION . RENAME osqueryi.exe)
 
-    file(COPY "${CMAKE_SOURCE_DIR}/tools/deployment/osquery.example.conf" DESTINATION "${CMAKE_BINARY_DIR}/package/wix")
-    install(FILES "${CMAKE_BINARY_DIR}/package/wix/osquery.example.conf" DESTINATION . RENAME osquery.conf)
+    # Chocolatey is a bit more manual than WiX, thus we grab extra artifacts
+    if(PACKAGING_SYSTEM STREQUAL "CHOCO")
+      file(COPY "$<TARGET_FILE:osqueryd>" DESTINATION "${CMAKE_BINARY_DIR}/package/${PACKAGING_SYSTEM}")
+      file(RENAME "${CMAKE_BINARY_DIR}/package/${PACKAGING_SYSTEM}/osqueryd.exe" "${CMAKE_BINARY_DIR}/package/${PACKAGING_SYSTEM}/osqueryi.exe")
+      file(COPY "$<TARGET_FILE:osqueryd>" DESTINATION "${CMAKE_BINARY_DIR}/package/${PACKAGING_SYSTEM}")
+    endif()
 
-    file(COPY "${CMAKE_SOURCE_DIR}/tools/wel/osquery.man" DESTINATION "${CMAKE_BINARY_DIR}/package/wix")
-    install(FILES "${CMAKE_BINARY_DIR}/package/wix/osquery.man" DESTINATION .)
+    file(COPY "${CMAKE_SOURCE_DIR}/tools/deployment/osquery.example.conf" DESTINATION "${CMAKE_BINARY_DIR}/package/${PACKAGING_SYSTEM}")
+    install(FILES "${CMAKE_BINARY_DIR}/package/${PACKAGING_SYSTEM}/osquery.example.conf" DESTINATION . RENAME osquery.conf)
 
-    file(COPY "${CMAKE_SOURCE_DIR}/tools/manage-osqueryd.ps1" DESTINATION "${CMAKE_BINARY_DIR}/package/wix")
-    install(FILES "${CMAKE_BINARY_DIR}/package/wix/manage-osqueryd.ps1" DESTINATION .)
+    file(COPY "${CMAKE_SOURCE_DIR}/tools/wel/osquery.man" DESTINATION "${CMAKE_BINARY_DIR}/package/${PACKAGING_SYSTEM}")
+    install(FILES "${CMAKE_BINARY_DIR}/package/${PACKAGING_SYSTEM}/osquery.man" DESTINATION .)
 
-    file(COPY "${CMAKE_SOURCE_DIR}/tools/provision/chocolatey/osquery_utils.ps1" DESTINATION "${CMAKE_BINARY_DIR}/package/wix")
-    install(FILES "${CMAKE_BINARY_DIR}/package/wix/osquery_utils.ps1" DESTINATION .)
+    file(COPY "${CMAKE_SOURCE_DIR}/tools/manage-osqueryd.ps1" DESTINATION "${CMAKE_BINARY_DIR}/package/${PACKAGING_SYSTEM}")
+    install(FILES "${CMAKE_BINARY_DIR}/package/${PACKAGING_SYSTEM}/manage-osqueryd.ps1" DESTINATION .)
 
-    file(WRITE "${CMAKE_BINARY_DIR}/package/wix/osquery.flags")
-    install(FILES "${CMAKE_BINARY_DIR}/package/wix/osquery.flags" DESTINATION .)
+    file(COPY "${CMAKE_SOURCE_DIR}/tools/provision/chocolatey/osquery_utils.ps1" DESTINATION "${CMAKE_BINARY_DIR}/package/${PACKAGING_SYSTEM}")
+    install(FILES "${CMAKE_BINARY_DIR}/package/${PACKAGING_SYSTEM}/osquery_utils.ps1" DESTINATION .)
+
+    file(WRITE "${CMAKE_BINARY_DIR}/package/${PACKAGING_SYSTEM}/osquery.flags")
+    install(FILES "${CMAKE_BINARY_DIR}/package/${PACKAGING_SYSTEM}/osquery.flags" DESTINATION .)
 
     # osqueryd
     install(TARGETS osqueryd DESTINATION osqueryd)
@@ -203,11 +233,12 @@ function(generateInstallTargets)
     install(DIRECTORY DESTINATION log)
 
     # packs
-    file(COPY "${CMAKE_SOURCE_DIR}/packs" DESTINATION "${CMAKE_BINARY_DIR}/package/wix")
-    install(DIRECTORY "${CMAKE_BINARY_DIR}/package/wix/packs" DESTINATION .)
+    file(COPY "${CMAKE_SOURCE_DIR}/packs" DESTINATION "${CMAKE_BINARY_DIR}/package/${PACKAGING_SYSTEM}")
+    install(DIRECTORY "${CMAKE_BINARY_DIR}/package/${PACKAGING_SYSTEM}/packs" DESTINATION .)
 
     # certs
     install(FILES "${CMAKE_SOURCE_DIR}/tools/deployment/certs.pem" DESTINATION certs)
+
   elseif(DEFINED PLATFORM_MACOS)
     # bin
     install(TARGETS osqueryd DESTINATION bin COMPONENT osquery)
@@ -327,15 +358,58 @@ function(generatePackageTarget)
     set(CPACK_COMMAND_PRODUCTBUILD "${CMAKE_SOURCE_DIR}/tools/deployment/productbuild.sh")
     set(CPACK_COMMAND_PKGBUILD "${CMAKE_SOURCE_DIR}/tools/deployment/productbuild.sh")
   elseif(DEFINED PLATFORM_WINDOWS)
-    file(COPY "${CMAKE_SOURCE_DIR}/tools/osquery.ico" DESTINATION "${CMAKE_BINARY_DIR}/package/wix")
-    file(COPY "${CMAKE_SOURCE_DIR}/cmake/wix_patches/osquery_wix_patch.xml" DESTINATION "${CMAKE_BINARY_DIR}/package/wix")
-    set(CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}")
-    set(CPACK_WIX_PRODUCT_ICON "${CMAKE_BINARY_DIR}/package/wix/osquery.ico")
-    set(CPACK_WIX_UPGRADE_GUID "ea6c7327-461e-4033-847c-acdf2b85dede")
-    set(CPACK_WIX_PATCH_FILE "${CMAKE_BINARY_DIR}/package/wix/osquery_wix_patch.xml" )
-    set(CPACK_WIX_SKIP_PROGRAM_FOLDER True)
-    set(CPACK_PACKAGE_INSTALL_DIRECTORY "C:/Program Files/osquery")
-    set(CPACK_WIX_EXTENSIONS "WixUtilExtension")
+
+    # The default installer is WiX, unless chocolatey is explicitly specified
+    if(PACKAGING_SYSTEM STREQUAL "CHOCO")
+      # TODO
+      # 1. create a zip of the full contents of .\package\CHOCO\* and place in bin
+      execute_process(
+        COMMAND ${7z_exec} a "${CMAKE_BINARY_DIR}/package/${PACKAGING_SYSTEM}/osquery.zip"
+        "${CMAKE_BINARY_DIR}/package/${PACKAGING_SYSTEM}/osqueryd.exe"
+        "${CMAKE_BINARY_DIR}/package/${PACKAGING_SYSTEM}/osqueryi.exe"
+        "${CMAKE_BINARY_DIR}/package/${PACKAGING_SYSTEM}/packs"
+        "${CMAKE_BINARY_DIR}/package/${PACKAGING_SYSTEM}/manage-osqueryd.ps1"
+        "${CMAKE_BINARY_DIR}/package/${PACKAGING_SYSTEM}/osquery.example.conf"
+        "${CMAKE_BINARY_DIR}/package/${PACKAGING_SYSTEM}/osquery.man"
+        "${CMAKE_BINARY_DIR}/package/${PACKAGING_SYSTEM}/osquery_utils.ps1"
+      )
+
+      # 2. create a .\tools directory, place into tools a folder, bin, Choco scripts
+      # for beforeModify, install, uninstall, License, verification, osquery_utils
+      file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/package/${PACKAGING_SYSTEM}/tools")
+      file(COPY "${CMAKE_BINARY_DIR}/package/LICENSE.txt"
+        DESTINATION "${CMAKE_BINARY_DIR}/package/${PACKAGING_SYSTEM}/tools/LICENSE.txt")
+      file(COPY "${CMAKE_SOURCE_DIR}/tools/deployment/chocolatey/tools/chocolateyBeforeModify.ps1"
+        DESTINATION "${CMAKE_BINARY_DIR}/package/${PACKAGING_SYSTEM}/tools/chocolateyBeforeModify.ps1")
+      file(COPY "${CMAKE_SOURCE_DIR}/tools/deployment/chocolatey/tools/chocolateyinstall.ps1"
+        DESTINATION "${CMAKE_BINARY_DIR}/package/${PACKAGING_SYSTEM}/tools/chocolateyinstall.ps1")
+      file(COPY "${CMAKE_SOURCE_DIR}/tools/deployment/chocolatey/tools/chocolateyuninstall.ps1"
+        DESTINATION "${CMAKE_BINARY_DIR}/package/${PACKAGING_SYSTEM}/tools/chocolateyuninstall.ps1")
+      
+      # All of the bundled contents live in a directory called `bin` under tools.
+      file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/package/${PACKAGING_SYSTEM}/tools/bin")
+      file(RENAME "${CMAKE_BINARY_DIR}/package/${PACKAGING_SYSTEM}/osquery.zip"
+        DESTINATION "${CMAKE_BINARY_DIR}/package/${PACKAGING_SYSTEM}/tools/bin/osquery.zip")
+
+      # 3. Render the osquery.nuspec, can this be templated? Powershell to write
+      # it to disk? I think wix XML is automagically rendered for us :(
+      #
+      # 4. Shell out to choco pack, display path to the user
+      #
+      # 5. Test :P
+
+    else()
+      file(COPY "${CMAKE_SOURCE_DIR}/tools/osquery.ico" DESTINATION "${CMAKE_BINARY_DIR}/package/${PACKAGING_SYSTEM}")
+      file(COPY "${CMAKE_SOURCE_DIR}/cmake/wix_patches/osquery_wix_patch.xml" DESTINATION "${CMAKE_BINARY_DIR}/package/${PACKAGING_SYSTEM}")
+      set(CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}")
+      set(CPACK_WIX_PRODUCT_ICON "${CMAKE_BINARY_DIR}/package/${PACKAGING_SYSTEM}/osquery.ico")
+      set(CPACK_WIX_UPGRADE_GUID "ea6c7327-461e-4033-847c-acdf2b85dede")
+      set(CPACK_WIX_PATCH_FILE "${CMAKE_BINARY_DIR}/package/${PACKAGING_SYSTEM}/osquery_wix_patch.xml" )
+      set(CPACK_WIX_SKIP_PROGRAM_FOLDER True)
+      set(CPACK_PACKAGE_INSTALL_DIRECTORY "C:/Program Files/osquery")
+      set(CPACK_WIX_EXTENSIONS "WixUtilExtension")
+    endif()
+
   elseif(DEFINED PLATFORM_FREEBSD)
   else()
     message(FATAL_ERROR "Unsupported platform")
