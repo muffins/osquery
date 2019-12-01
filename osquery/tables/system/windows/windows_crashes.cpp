@@ -32,6 +32,7 @@
 #include <osquery/utils/conversions/join.h>
 #include <osquery/utils/conversions/tryto.h>
 #include <osquery/utils/conversions/windows/strings.h>
+#include <osquery/utils/scope_guard.h>
 
 namespace alg = boost::algorithm;
 namespace fs = boost::filesystem;
@@ -42,6 +43,10 @@ namespace tables {
 const std::string kLocalDumpsRegKey =
     "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\Windows Error "
     "Reporting\\LocalDumps\\DumpFolder";
+const std::string kSystemMiniDumpsRegKey =
+    "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control"
+    "\\CrashControl\\MinidumpDir";
+
 const std::string kSymbolPath =
     "C:\\ProgramData\\dbg\\sym;"
     "cache*C:\\ProgramData\\dbg\\sym;"
@@ -219,11 +224,16 @@ Status logPIDAndTID(IDebugSystemObjects2* system, Row& r) {
 
 Status logProcessUptime(IDebugSystemObjects2* system, Row& r) {
   unsigned long uptime = 0;
-  if (system->GetCurrentProcessUpTime(&uptime) == S_OK) {
+  auto ret = system->GetCurrentProcessUpTime(&uptime);
+  if (ret == S_OK) {
     r["process_uptime"] = BIGINT(uptime);
     return Status::success();
+  } else {
+    auto msg =
+        "Failed to look up crashed process uptime with " + std::to_string(ret);
+    LOG(WARNING) << msg;
+    return Status::failure(msg);
   }
-  return Status(1);
 }
 
 Status logDumpTime(IDebugControl5* control, Row& r) {
@@ -511,111 +521,12 @@ Status logPEBInfo(IDebugClient5* client,
   return Status::success();
 }
 
-void debugEngineCleanup(IDebugClient5* client,
-                        IDebugControl5* control,
-                        IDebugSymbols3* symbols,
-                        IDebugSystemObjects2* system,
-                        IDebugDataSpaces4* data,
-                        IDebugRegisters* registers,
-                        IDebugAdvanced* advanced) {
-  if (control != nullptr) {
-    control->Release();
-  }
-  if (symbols != nullptr) {
-    symbols->Release();
-  }
-  if (system != nullptr) {
-    system->Release();
-  }
-  if (data != nullptr) {
-    data->Release();
-  }
-  if (registers != nullptr) {
-    registers->Release();
-  }
-  if (advanced != nullptr) {
-    advanced->Release();
-  }
-  if (client != nullptr) {
-    client->EndSession(DEBUG_END_PASSIVE);
-    client->Release();
-  }
-  return;
-}
-
-void processDebugEngine(const std::string& fileName, Row& r) {
-  const unsigned long kSymbolOptions =
-      SYMOPT_CASE_INSENSITIVE & SYMOPT_UNDNAME & SYMOPT_LOAD_LINES &
-      SYMOPT_OMAP_FIND_NEAREST & SYMOPT_LOAD_ANYTHING &
-      SYMOPT_FAIL_CRITICAL_ERRORS & SYMOPT_AUTO_PUBLICS;
-
-  IDebugClient5* client = nullptr;
-  IDebugControl5* control = nullptr;
-  IDebugSymbols3* symbols = nullptr;
-  IDebugSystemObjects2* system = nullptr;
-  IDebugDataSpaces4* data = nullptr;
-  IDebugRegisters* registers = nullptr;
-  IDebugAdvanced* advanced = nullptr;
-
-  // Create debug interfaces
-  if (DebugCreate(__uuidof(IDebugClient5), (void**)&client) != S_OK) {
-    LOG(ERROR) << "DebugCreate failed while debugging crash dump: " << fileName;
-    return;
-  }
-  if ((client->QueryInterface(__uuidof(IDebugControl5), (void**)&control) !=
-       S_OK) ||
-      (client->QueryInterface(__uuidof(IDebugSymbols3), (void**)&symbols) !=
-       S_OK) ||
-      (client->QueryInterface(__uuidof(IDebugSystemObjects2),
-                              (void**)&system) != S_OK) ||
-      (client->QueryInterface(__uuidof(IDebugDataSpaces4), (void**)&data) !=
-       S_OK) ||
-      (client->QueryInterface(__uuidof(IDebugRegisters), (void**)&registers) !=
-       S_OK) ||
-      (client->QueryInterface(__uuidof(IDebugAdvanced), (void**)&advanced) !=
-       S_OK)) {
-    LOG(ERROR) << "Failed to generate interfaces while debugging crash dump: "
-               << fileName;
-    return debugEngineCleanup(
-        client, control, symbols, system, data, registers, advanced);
-  }
-
-  // Initialize debug engine
-  if ((symbols->SetSymbolPath(kSymbolPath.c_str()) != S_OK) ||
-      (symbols->SetSymbolOptions(kSymbolOptions) != S_OK) ||
-      (client->OpenDumpFile(fileName.c_str()) != S_OK) ||
-      (control->WaitForEvent(DEBUG_WAIT_DEFAULT, INFINITE) != S_OK)) {
-    LOG(ERROR) << "Failed during initialization while debugging crash dump: "
-               << fileName;
-    return debugEngineCleanup(
-        client, control, symbols, system, data, registers, advanced);
-  }
-
-  // Extract information from the minidump
-  r["crash_path"] = fileName;
-  logDumpType(control, r);
-  logDumpTime(control, r);
-  logProcessUptime(system, r);
-  logPIDAndTID(system, r);
-  logOSVersion(control, r);
-  logExceptionInfo(control, r);
-  logStackTrace(control, symbols, r);
-  logPEPathAndVersion(symbols, r);
-  logModulePath(symbols, r);
-  logRegisters(client, control, registers, advanced, r);
-  logPEBInfo(client, control, symbols, system, data, r);
-
-  // Cleanup
-  return debugEngineCleanup(
-      client, control, symbols, system, data, registers, advanced);
-}
-
 QueryData genCrashLogs(QueryContext& context) {
   const std::string kDumpFileExtension = ".dmp";
   QueryData results;
   std::string dumpFolderLocation{""};
 
-  // Query registry for crash dump folder
+  // Query registry for the application crash dump folder
   std::string dumpFolderQuery =
       "SELECT data FROM registry WHERE path = \"" + kLocalDumpsRegKey + "\"";
   SQL dumpFolderResults(dumpFolderQuery);
@@ -628,25 +539,180 @@ QueryData genCrashLogs(QueryContext& context) {
 
   if (!fs::exists(dumpFolderLocation) ||
       !fs::is_directory(dumpFolderLocation)) {
-    LOG(ERROR) << "No crash dump directory found";
+    LOG(ERROR) << "Unable to derive application crash directory at ";
     return results;
   }
 
-  // Enumerate and process crash dumps
+  const unsigned long kSymbolOptions =
+      SYMOPT_CASE_INSENSITIVE & SYMOPT_UNDNAME & SYMOPT_LOAD_LINES &
+      SYMOPT_OMAP_FIND_NEAREST & SYMOPT_LOAD_ANYTHING &
+      SYMOPT_FAIL_CRITICAL_ERRORS & SYMOPT_AUTO_PUBLICS;
+
+  // DebugCreate returns an HRESULT
+  // Initialize all of the DebugClient components to parse Crash Dumps
+  IDebugClient5* client = nullptr;
+  auto ret = DebugCreate(__uuidof(IDebugClient5), (void**)&client);
+  if (ret != S_OK) {
+    LOG(ERROR) << "Failed to initialize debugging interface with " << ret;
+    return results;
+  }
+  auto const client_mgr = scope_guard::create([&client]() { 
+    client->EndSession(DEBUG_END_PASSIVE);
+    client->Release();
+  });
+
+  IDebugControl5* control = nullptr;
+  ret = client->QueryInterface(__uuidof(IDebugControl5), (void**)&control);
+  if (ret != S_OK) {
+    LOG(ERROR) << "Failed to load IDebugControl with " << ret;
+    return results;
+  }
+  auto const control_mgr = scope_guard::create([&control]() { 
+    control->Release();
+  });
+
+  IDebugSymbols3* symbols = nullptr;
+  ret = client->QueryInterface(__uuidof(IDebugSymbols3), (void**)&symbols);
+  if (ret != S_OK) {
+    LOG(ERROR) << "Failed to load IDebugSymbols with " << ret;
+    return results;
+  }
+  auto const symbols_mgr = scope_guard::create([&symbols]() { 
+    symbols->Release();
+  });
+
+  IDebugSystemObjects2* system = nullptr;
+  ret = client->QueryInterface(__uuidof(IDebugSystemObjects2), (void**)&system);
+  if (ret != S_OK) {
+    LOG(ERROR) << "Failed to load IDebugSystem with " << ret;
+    return results;
+  }
+  auto const system_mgr = scope_guard::create([&system]() { 
+    system->Release();
+  });
+
+  IDebugDataSpaces4* data = nullptr;
+  ret = client->QueryInterface(__uuidof(IDebugDataSpaces4), (void**)&data);
+  if (ret != S_OK) {
+    LOG(ERROR) << "Failed to load IDebugData with " << ret;
+    return results;
+  }
+  auto const data_mgr = scope_guard::create([&data]() { data->Release(); });
+
+  IDebugRegisters* registers = nullptr;
+  ret = client->QueryInterface(__uuidof(IDebugRegisters), (void**)&registers);
+  if (ret != S_OK) {
+    LOG(ERROR) << "Failed to load IDebugRegister with " << ret;
+    return results;
+  }
+  auto const registers_mgr = scope_guard::create([&registers]() {
+    registers->Release(); 
+  });
+
+  IDebugAdvanced* advanced = nullptr;
+  ret = client->QueryInterface(__uuidof(IDebugAdvanced), (void**)&advanced);
+  if (ret != S_OK) {
+    LOG(ERROR) << "Failed to load IDebugAdvanced with " << ret;
+    return results;
+  }
+  auto const advanced_mgr = scope_guard::create([&advanced]() {
+    advanced->Release(); 
+  });
+
+  ret = symbols->SetSymbolPath(kSymbolPath.c_str());
+  if (ret != S_OK) {
+    LOG(ERROR) << "Failed to set debugging symbol path with " << ret;
+    return results;
+  }
+
+  ret = symbols->SetSymbolOptions(kSymbolOptions);
+  if (ret != S_OK) {
+    LOG(ERROR) << "Failed to set debugging symbol options with " << ret;
+    return results;
+  }
+
+  // Enumerate and process application crash dumps
   std::vector<std::string> files;
-  if (listFilesInDirectory(dumpFolderLocation, files)) {
-    for (const auto& lf : files) {
-      if (alg::iends_with(lf, kDumpFileExtension) && fs::is_regular_file(lf)) {
-        Row r;
-        processDebugEngine(lf, r);
-        if (!r.empty()) {
-          results.push_back(r);
-        }
+  auto list_dir_ret = listFilesInDirectory(dumpFolderLocation, files);
+  if (!list_dir_ret.ok()) {
+    LOG(ERROR) << "Failed to enumerate crash dumps in " << dumpFolderLocation;
+    return results;
+  }
+  for (const auto& file : files) {
+    if (alg::iends_with(file, kDumpFileExtension) &&
+        fs::is_regular_file(file)) {
+      Row r;
+
+      ret = client->OpenDumpFile(file.c_str());
+      if (ret != S_OK) {
+        LOG(ERROR) << "Failed to open debug file " << file.c_str();
+        continue;
+      }
+
+  	  ret = control->WaitForEvent(DEBUG_WAIT_DEFAULT, INFINITE);
+      if (ret != S_OK) {
+        LOG(ERROR) << "Wait for debug event failed with " << ret;
+        return results;
+      }
+
+      // Extract information from the minidump
+      r["crash_path"] = file;
+      if (context.isColumnUsed("type")) {
+        logDumpType(control, r);
+      }
+
+      if (context.isColumnUsed("datetime")) {
+        logDumpTime(control, r);
+      }
+
+      if (context.isColumnUsed("process_uptime")) {
+        logProcessUptime(system, r);
+      }
+
+      if (context.isAnyColumnUsed({"pid", "tid"})) {
+        logPIDAndTID(system, r);
+      }
+
+      if (context.isAnyColumnUsed(
+              {"major_version", "minor_version", "build_number"})) {
+        logOSVersion(control, r);
+      }
+
+      if (context.isAnyColumnUsed(
+              {"exception_code", "exception_address", "exception_message"})) {
+        logExceptionInfo(control, r);
+      }
+
+      if (context.isColumnUsed("stack_trace")) {
+        logStackTrace(control, symbols, r);
+      }
+
+      if (context.isAnyColumnUsed({"path", "version"})) {
+        logPEPathAndVersion(symbols, r);
+      }
+
+      if (context.isColumnUsed("module")) {
+        logModulePath(symbols, r);
+      }
+
+      if (context.isColumnUsed("registers")) {
+        logRegisters(client, control, registers, advanced, r);
+      }
+
+      if (context.isAnyColumnUsed({"current_directory",
+                                   "command_line",
+                                   "machine_name",
+                                   "username"})) {
+        logPEBInfo(client, control, symbols, system, data, r);
+      }
+
+      if (!r.empty()) {
+        results.push_back(r);
       }
     }
   }
 
   return results;
 }
-}
-}
+} // namespace tables
+} // namespace osquery
