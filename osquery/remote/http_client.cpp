@@ -240,6 +240,18 @@ void Client::encryptConnection() {
   }
 
   ssl_sock_ = std::make_shared<ssl_stream>(sock_, ctx);
+
+  if (client_options_.always_verify_peer_) {
+    if (!client_options_.sni_hostname_) {
+      throw std::logic_error(
+          "The SNI hostname is missing from the Client options");
+    }
+
+    const auto& sni_hostname = client_options_.sni_hostname_.value();
+    ssl_sock_->set_verify_callback(
+        boost::asio::ssl::rfc2818_verification(sni_hostname));
+  }
+
   if (client_options_.sni_hostname_) {
     ::SSL_set_tlsext_host_name(ssl_sock_->native_handle(),
                                client_options_.sni_hostname_->c_str());
