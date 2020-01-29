@@ -129,7 +129,7 @@ TEST_F(TLSTransportsTests, test_call_with_params) {
   }
 }
 
-TEST_F(TLSTransportsTests, DISABLED_test_call_verify_peer) {
+TEST_F(TLSTransportsTests, test_call_verify_peer) {
   // Create a default request without a transport that accepts invalid peers.
   auto url = "https://localhost:" + port_;
   Request<TLSTransport, JSONSerializer> r(url);
@@ -155,15 +155,25 @@ TEST_F(TLSTransportsTests, test_call_server_cert_pinning) {
   // an unknown signing CA and wrong commonName.
   auto t = std::make_shared<TLSTransport>();
   t->setPeerCertificate((getTestConfigDirectory() / "test_server_ca.pem").string());
+  t->setClientCertificate((getTestConfigDirectory() / "test_client.pem").string(),
+                          (getTestConfigDirectory() / "test_client.key").string());
 
+
+  TLSServerRunner::setClientConfig();
   auto url = "https://localhost:" + port_;
   Request<TLSTransport, JSONSerializer> r1(url, t);
 
+  r1.setOption("hostname", "localhost");
+  LOG(ERROR) << r1.getOption("hostname");
+
   Status status;
   ASSERT_NO_THROW(status = r1.call());
+  LOG(ERROR) << "A";
   if (verify(status)) {
+    LOG(ERROR) << "B";
     EXPECT_TRUE(status.ok());
   }
+  LOG(ERROR) << "C";
 
   // Now try with a path that is not a filename.
   t = std::make_shared<TLSTransport>();
@@ -174,6 +184,8 @@ TEST_F(TLSTransportsTests, test_call_server_cert_pinning) {
   if (verify(status)) {
     EXPECT_FALSE(status.ok());
   }
+
+  TLSServerRunner::unsetClientConfig();
 }
 
 TEST_F(TLSTransportsTests, test_call_client_auth) {
