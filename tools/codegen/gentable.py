@@ -9,14 +9,17 @@
 import argparse
 import ast
 import fnmatch
-import jinja2
 import logging
 import os
 import sys
 
+import jinja2
+sys.path.append("./tools")
+from tests import utils
+
+
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
-from osquery_tests.tools.tests import utils
 
 # the log format for the logging module
 LOG_FORMAT = "%(levelname)s [Line %(lineno)d]: %(message)s"
@@ -33,12 +36,13 @@ PLATFORM = utils.platform()
 # Supported SQL types for spec
 class DataType(object):
     def __init__(self, affinity, cpp_type="std::string"):
-        '''A column datatype is a pair of a SQL affinity to C++ type.'''
+        """A column datatype is a pair of a SQL affinity to C++ type."""
         self.affinity = affinity
         self.type = cpp_type
 
     def __repr__(self):
         return self.affinity
+
 
 # Define column-type MACROs for the table specs
 TEXT = DataType("TEXT_TYPE")
@@ -68,50 +72,48 @@ COLUMN_OPTIONS = {
 }
 
 # Column options that render tables uncacheable.
-NON_CACHEABLE = [
-    "REQUIRED",
-    "ADDITIONAL",
-    "OPTIMIZED",
-]
+NON_CACHEABLE = ["REQUIRED", "ADDITIONAL", "OPTIMIZED"]
 
 TABLE_ATTRIBUTES = {
     "event_subscriber": "EVENT_BASED",
     "user_data": "USER_BASED",
     "cacheable": "CACHEABLE",
     "utility": "UTILITY",
-    "kernel_required": "KERNEL_REQUIRED", # Deprecated
+    "kernel_required": "KERNEL_REQUIRED",  # Deprecated
 }
 
 
 def WINDOWS():
-    return PLATFORM in ['windows', 'win32', 'cygwin']
+    return PLATFORM in ["windows", "win32", "cygwin"]
 
 
 def LINUX():
-    return PLATFORM in ['linux']
+    return PLATFORM in ["linux"]
 
 
 def POSIX():
-    return PLATFORM in ['linux', 'darwin', 'freebsd']
+    return PLATFORM in ["linux", "darwin", "freebsd"]
 
 
 def DARWIN():
-    return PLATFORM in ['darwin']
+    return PLATFORM in ["darwin"]
 
 
 def FREEBSD():
-    return PLATFORM in ['freebsd']
+    return PLATFORM in ["freebsd"]
 
 
 def to_camel_case(snake_case):
     """ convert a snake_case string to camelCase """
-    components = snake_case.split('_')
+    components = snake_case.split("_")
     return components[0] + "".join(x.title() for x in components[1:])
+
 
 def to_upper_camel_case(snake_case):
     """ convert a snake_case string to UpperCamelCase """
-    components = snake_case.split('_')
+    components = snake_case.split("_")
     return "".join(x.title() for x in components)
+
 
 def lightred(msg):
     return "\033[1;31m %s \033[0m" % str(msg)
@@ -129,7 +131,8 @@ def is_blacklisted(table_name, path=None, blacklist=None):
         try:
             with open(blacklist_path, "r") as fh:
                 blacklist = [
-                    line.strip() for line in fh.read().split("\n")
+                    line.strip()
+                    for line in fh.read().split("\n")
                     if len(line.strip()) > 0 and line.strip()[0] != "#"
                 ]
         except:
@@ -152,8 +155,7 @@ def is_blacklisted(table_name, path=None, blacklist=None):
 
 def setup_templates(templates_path):
     if not os.path.exists(templates_path):
-        templates_path = os.path.join(
-            os.path.dirname(tables_path), "templates")
+        templates_path = os.path.join(os.path.dirname(tables_path), "templates")
         if not os.path.exists(templates_path):
             print("Cannot read templates path: %s" % (templates_path))
             exit(1)
@@ -175,8 +177,7 @@ class Singleton(object):
 
     def __new__(self, *args, **kwargs):
         if not self._instance:
-            self._instance = super(Singleton, self).__new__(
-                self, *args, **kwargs)
+            self._instance = super(Singleton, self).__new__(self, *args, **kwargs)
         return self._instance
 
 
@@ -224,9 +225,12 @@ class TableState(Singleton):
                     column_options.append("ColumnOptions::" + COLUMN_OPTIONS[option])
                     all_options.append(COLUMN_OPTIONS[option])
                 else:
-                    print(yellow(
-                        "Table %s column %s contains an unknown option: %s" % (
-                            self.table_name, column.name, option)))
+                    print(
+                        yellow(
+                            "Table %s column %s contains an unknown option: %s"
+                            % (self.table_name, column.name, option)
+                        )
+                    )
             column.options_set = " | ".join(column_options)
             if len(column.aliases) > 0:
                 self.has_column_aliases = True
@@ -238,8 +242,12 @@ class TableState(Singleton):
             self.strongly_typed_rows = True
         if "cacheable" in self.attributes:
             if self.generator:
-                print(lightred(
-                    "Table cannot use a generator and be marked cacheable: %s" % (path)))
+                print(
+                    lightred(
+                        "Table cannot use a generator and be marked cacheable: %s"
+                        % (path)
+                    )
+                )
                 exit(1)
         if self.table_name == "" or self.function == "":
             print(lightred("Invalid table spec: %s" % (path)))
@@ -248,9 +256,15 @@ class TableState(Singleton):
         # Check for reserved column names
         for column in self.columns():
             if column.name in RESERVED:
-                print(lightred(("Cannot use column name: %s in table: %s "
-                                "(the column name is reserved)" % (
-                                    column.name, self.table_name))))
+                print(
+                    lightred(
+                        (
+                            "Cannot use column name: %s in table: %s "
+                            "(the column name is reserved)"
+                            % (column.name, self.table_name)
+                        )
+                    )
+                )
                 exit(1)
 
         path_bits = path.split("/")
@@ -281,7 +295,11 @@ class TableState(Singleton):
             has_column_aliases=self.has_column_aliases,
             generator=self.generator,
             strongly_typed_rows=self.strongly_typed_rows,
-            attribute_set=[TABLE_ATTRIBUTES[attr] for attr in self.attributes if attr in TABLE_ATTRIBUTES],
+            attribute_set=[
+                TABLE_ATTRIBUTES[attr]
+                for attr in self.attributes
+                if attr in TABLE_ATTRIBUTES
+            ],
         )
 
         with open(path, "w+") as file_h:
@@ -291,6 +309,7 @@ class TableState(Singleton):
         print(lightred("Blacklisting generated %s" % path))
         logging.debug("blacklisting %s" % path)
         self.generate(path, template="blacklist")
+
 
 table = TableState()
 
@@ -357,12 +376,12 @@ def extended_schema(check, schema_list):
         if isinstance(it, Column):
             logging.debug("  - column: %s (%s)" % (it.name, it.type))
             if not check():
-                it.options['hidden'] = True
+                it.options["hidden"] = True
             table.schema.append(it)
 
 
 def description(text):
-    if text[-1:] != '.':
+    if text[-1:] != ".":
         print(lightred("Table description must end with a period!"))
         exit(1)
     table.description = text
@@ -409,7 +428,7 @@ def implementation(impl_string, generator=False):
     table.class_name = class_name
     table.generator = generator
 
-    '''Check if the table has a subscriber attribute, if so, enforce time.'''
+    """Check if the table has a subscriber attribute, if so, enforce time."""
     if "event_subscriber" in table.attributes:
         if not table.table_name.endswith("_events"):
             print(lightred("Event subscriber must use a '_events' suffix"))
@@ -420,31 +439,45 @@ def implementation(impl_string, generator=False):
             if isinstance(column, Column):
                 columns[column.name] = column.type
         if "time" not in columns:
-            print(lightred("Event subscriber: %s needs a 'time' column." % (
-                table.table_name)))
+            print(
+                lightred(
+                    "Event subscriber: %s needs a 'time' column." % (table.table_name)
+                )
+            )
             sys.exit(1)
         if columns["time"] is not BIGINT:
-            print(lightred(
-                "Event subscriber: %s, 'time' column must be a %s type" % (
-                    table.table_name, BIGINT)))
+            print(
+                lightred(
+                    "Event subscriber: %s, 'time' column must be a %s type"
+                    % (table.table_name, BIGINT)
+                )
+            )
             sys.exit(1)
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        "Generate C++ Table Plugin from specfile.")
+    parser = argparse.ArgumentParser("Generate C++ Table Plugin from specfile.")
     parser.add_argument(
-        "--debug", default=False, action="store_true",
-        help="Output debug messages (when developing)"
+        "--debug",
+        default=False,
+        action="store_true",
+        help="Output debug messages (when developing)",
     )
-    parser.add_argument("--disable-blacklist", default=False,
-        action="store_true")
-    parser.add_argument("--header", default=False, action="store_true",
-                        help="Generate the header file instead of cpp")
-    parser.add_argument("--foreign", default=False, action="store_true",
-        help="Generate a foreign table")
-    parser.add_argument("--templates", default=SCRIPT_DIR + "/templates",
-                        help="Path to codegen output .cpp.in templates")
+    parser.add_argument("--disable-blacklist", default=False, action="store_true")
+    parser.add_argument(
+        "--header",
+        default=False,
+        action="store_true",
+        help="Generate the header file instead of cpp",
+    )
+    parser.add_argument(
+        "--foreign", default=False, action="store_true", help="Generate a foreign table"
+    )
+    parser.add_argument(
+        "--templates",
+        default=SCRIPT_DIR + "/templates",
+        help="Path to codegen output .cpp.in templates",
+    )
     parser.add_argument("spec_file", help="Path to input .table spec file")
     parser.add_argument("output", help="Path to output .cpp file")
     args = parser.parse_args()
@@ -474,6 +507,7 @@ def main():
                 else:
                     template_type = "default"
                 table.generate(output, template=template_type)
+
 
 if __name__ == "__main__":
     main()

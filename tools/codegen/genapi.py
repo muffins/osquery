@@ -16,7 +16,8 @@ import uuid
 import subprocess
 
 from gentable import *
-from osquery_tests.tools.tests import utils
+sys.path.append("./tools")
+from tests import utils
 
 
 # the log format for the logging module
