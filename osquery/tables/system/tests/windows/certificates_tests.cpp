@@ -14,6 +14,7 @@
 #include <osquery/core/tables.h>
 #include <osquery/database/database.h>
 #include <osquery/registry/registry.h>
+#include <osquery/sql/sql.h>
 
 #include <osquery/tables/system/windows/certificates.h>
 
@@ -100,6 +101,12 @@ TEST_F(CertificatesTablesTest, test_user_classes) {
             "S-1-5-21-2821152761-3909955410-1545212275-1001_Classes");
   EXPECT_EQ(sid, "S-1-5-21-2821152761-3909955410-1545212275-1001");
   EXPECT_EQ(storeName, "Trusted Root Certification Authorities");
+}
+
+TEST_F(CertificatesTablesTest, test_certificate_common_name) {
+  SQL result("SELECT common_name FROM certificates LIMIT 1;");
+  EXPECT_TRUE(result.rows().size() > 0);
+  EXPECT_TRUE(!result.rows()[0]["common_name"].empty());
 }
 
 } // namespace tables
