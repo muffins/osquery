@@ -375,7 +375,7 @@ function(generateInstallDirectives)
     )
 
     install(
-      FILES "tools/deployment/windows_packaging/osquery.ico"
+      FILES "tools/deployment/windows_packaging/osquery.png"
       DESTINATION "/control"
     )
 
